@@ -18,6 +18,7 @@ class ScrollbarSlider {
     required this.position,
     required this.size,
     required this.ratio,
+    required this.trackSize,
   });
 
   factory ScrollbarSlider.compute({
@@ -33,6 +34,7 @@ class ScrollbarSlider {
         position: 0,
         size: trackSize,
         ratio: 1,
+        trackSize: trackSize,
       );
     }
     final size = math.min(
@@ -48,6 +50,7 @@ class ScrollbarSlider {
       position: (scrollPosition * ratio).clamp(0.0, trackSize - size),
       size: size,
       ratio: ratio,
+      trackSize: trackSize,
     );
   }
 
@@ -65,6 +68,23 @@ class ScrollbarSlider {
   /// Scroll position for a slider dragged by [delta] from [startScroll].
   double scrollForDrag(double startScroll, double delta) =>
       ratio <= 0 ? startScroll : startScroll + delta / ratio;
+
+  /// Scroll position that centers the slider on [trackPosition].
+  ///
+  /// The position is relative to the track. Keeping the slider center under
+  /// the pointer makes a click on the track jump directly to that location,
+  /// instead of paging by one viewport.
+  double scrollForClick(double trackPosition) {
+    if (ratio <= 0) return 0;
+    final sliderPosition = (trackPosition - size / 2).clamp(
+      0.0,
+      math.max(0.0, trackSize - size),
+    );
+    return sliderPosition / ratio;
+  }
+
+  /// Length of the track used to calculate [scrollForClick].
+  final double trackSize;
 }
 
 /// Cached overview-ruler marks for decorations (the ruler lives inside the

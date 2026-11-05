@@ -412,14 +412,16 @@ class _PixelAnimationState extends State<_PixelAnimation> {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox.square(
-      dimension: widget.size,
-      child: CustomPaint(
-        painter: _PixelPainter(
-          _clock,
-          widget.style,
-          widget.color,
-          still: _still,
+    return RepaintBoundary(
+      child: SizedBox.square(
+        dimension: widget.size,
+        child: CustomPaint(
+          painter: _PixelPainter(
+            _clock,
+            widget.style,
+            widget.color,
+            still: _still,
+          ),
         ),
       ),
     );

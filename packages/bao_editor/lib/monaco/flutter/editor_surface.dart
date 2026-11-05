@@ -1615,9 +1615,9 @@ class _EditorSurfaceState extends State<EditorSurface>
         if (!slider.needed) return;
         final y = position.dy - geometry.verticalScrollbarRect.top;
         if (y < slider.position || y >= slider.position + slider.size) {
-          // Clicking the track pages toward the pointer.
-          final page = layout.viewportSize.height;
-          _scrollBy(0, y < slider.position ? -page : page);
+          // Clicking the track jumps to the clicked position, with the
+          // scrollbar thumb centered under the pointer.
+          _setScroll(top: slider.scrollForClick(y));
           return;
         }
         _dragStartScroll = _scrollTop;
@@ -1628,8 +1628,9 @@ class _EditorSurfaceState extends State<EditorSurface>
         if (!slider.needed) return;
         final x = position.dx - geometry.horizontalScrollbarRect.left;
         if (x < slider.position || x >= slider.position + slider.size) {
-          final page = layout.viewportSize.width;
-          _scrollBy(x < slider.position ? -page : page, 0);
+          // Clicking the track jumps to the clicked position, with the
+          // scrollbar thumb centered under the pointer.
+          _setScroll(left: slider.scrollForClick(x));
           return;
         }
         _dragStartScroll = _scrollLeft;

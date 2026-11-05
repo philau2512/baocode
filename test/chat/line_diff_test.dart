@@ -40,6 +40,19 @@ void main() {
     // A line break added to the last line changes it.
     expect(lineCounts(_bytes('a'), _bytes('a\n')), (added: 1, removed: 1));
     expect(lineCounts([0, 1, 2], _bytes('a\n')), isNull);
+    // CRLF vs LF on identical content counts as no changes.
+    expect(lineCounts(_bytes('1\r\n2\r\n3\r\n'), _bytes('1\n2\n3\n')), (
+      added: 0,
+      removed: 0,
+    ));
+    // 3 lines deleted from a 6-line file across different line endings.
+    expect(
+      lineCounts(
+        _bytes('1\r\n2\r\n3\r\n4\r\n5\r\n6\r\n'),
+        _bytes('1\n2\n3\n'),
+      ),
+      (added: 0, removed: 3),
+    );
   });
 
   test('its stretches turn one text into the other', () {

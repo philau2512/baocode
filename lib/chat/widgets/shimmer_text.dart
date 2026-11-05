@@ -55,42 +55,44 @@ class _ShimmerTextState extends State<ShimmerText> {
   @override
   Widget build(BuildContext context) {
     // As wide as the text: what follows it (e.g. a chevron) stays beside it.
-    return Padding(
-      padding: widget.padding,
-      child: AnimatedBuilder(
-        animation: _clock,
-        builder: (context, child) {
-          // Still, the highlight is off the text: where motion is turned
-          // down, just the muted label.
-          final t = _still
-              ? -1.0
-              : _clock.time.inMicroseconds %
-                        _sweep.inMicroseconds /
-                        _sweep.inMicroseconds *
-                        3 -
-                    1;
-          // As upstream's: the description's color, `chat.thinkingShimmer`
-          // sweeping across.
-          final base = AppColors.textMuted;
-          final shimmer = themeColors['chat.thinkingShimmer'];
-          return ShaderMask(
-            blendMode: BlendMode.srcIn,
-            shaderCallback: (bounds) => LinearGradient(
-              colors: [base, shimmer, base],
-              stops: [t - 0.3, t, t + 0.3],
-            ).createShader(bounds),
-            child: child,
-          );
-        },
-        child: Text(
-          widget.ellipsis ? '${widget.text}…' : widget.text,
-          // Opaque, for the mask: the shader gives the color.
-          style: const TextStyle(fontSize: 13)
-              .merge(widget.style)
-              .copyWith(color: Colors.white),
-          strutStyle: widget.strutStyle,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+    return RepaintBoundary(
+      child: Padding(
+        padding: widget.padding,
+        child: AnimatedBuilder(
+          animation: _clock,
+          builder: (context, child) {
+            // Still, the highlight is off the text: where motion is turned
+            // down, just the muted label.
+            final t = _still
+                ? -1.0
+                : _clock.time.inMicroseconds %
+                          _sweep.inMicroseconds /
+                          _sweep.inMicroseconds *
+                          3 -
+                      1;
+            // As upstream's: the description's color, `chat.thinkingShimmer`
+            // sweeping across.
+            final base = AppColors.textMuted;
+            final shimmer = themeColors['chat.thinkingShimmer'];
+            return ShaderMask(
+              blendMode: BlendMode.srcIn,
+              shaderCallback: (bounds) => LinearGradient(
+                colors: [base, shimmer, base],
+                stops: [t - 0.3, t, t + 0.3],
+              ).createShader(bounds),
+              child: child,
+            );
+          },
+          child: Text(
+            widget.ellipsis ? '${widget.text}…' : widget.text,
+            // Opaque, for the mask: the shader gives the color.
+            style: const TextStyle(fontSize: 13)
+                .merge(widget.style)
+                .copyWith(color: Colors.white),
+            strutStyle: widget.strutStyle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
       ),
     );
