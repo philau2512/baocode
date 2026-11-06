@@ -280,6 +280,15 @@ LRESULT CALLBACK ViewWindow::ViewProc(HWND hwnd, UINT const message,
     }
   }
 
+  // An IME owns character messages while composing. Do not assign them a
+  // physical key's scancode: Flutter uses that pairing for raw keyboard input,
+  // which breaks Vietnamese Telex/VNI composition under the custom view proc.
+  if (that != nullptr && message == WM_IME_STARTCOMPOSITION) {
+    that->ime_composing_ = true;
+  } else if (that != nullptr && message == WM_IME_ENDCOMPOSITION) {
+    that->ime_composing_ = false;
+  }
+
   // Keys another app sends with SendInput may come without a scancode — the
   // Control+V the clipboard history (Win+V) pastes an entry with, those of
   // remote desktops and of key remappers. The engine tells keys apart by
@@ -300,7 +309,7 @@ LRESULT CALLBACK ViewWindow::ViewProc(HWND hwnd, UINT const message,
     that->key_down_scancode_bits_ = key_lparam & kScancodeBits;
   }
   if (that != nullptr && IsCharMessage(message) &&
-      (lparam & kScancodeBits) == 0) {
+      !that->ime_composing_ && (lparam & kScancodeBits) == 0) {
     key_lparam = lparam | that->key_down_scancode_bits_;
   }
 
