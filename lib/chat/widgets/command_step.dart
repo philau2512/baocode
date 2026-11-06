@@ -6,6 +6,7 @@ import '../../sidebar/sidebar_menu.dart';
 import '../../theme/app_theme.dart';
 import '../chat_models.dart';
 import '../floating/floating_placement.dart';
+import 'command_presentation.dart';
 import 'hover_builder.dart';
 import 'shell_highlight.dart';
 import 'step_header.dart';
@@ -69,6 +70,7 @@ class CommandStep extends StatelessWidget {
   Widget build(BuildContext context) {
     // Rendered once opened: most steps stay closed.
     final printed = expanded ? terminalOutput(output) : null;
+    final presentation = commandPresentation(command);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -76,6 +78,7 @@ class CommandStep extends StatelessWidget {
           verb: verb(status, background: background, l10n: context.l10n),
           object: title(command, description),
           detail: background ? context.l10n.commandInBackground : null,
+          icon: Icon(presentation.icon, size: 15, color: presentation.color),
           running: _running,
           expanded: expanded,
           onToggle: _opens ? onToggle : null,
