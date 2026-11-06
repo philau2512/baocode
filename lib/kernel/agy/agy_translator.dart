@@ -676,37 +676,24 @@ final class AgyTranslator {
     final id = textId;
     if (id != null) emit(ItemCompleted(nextSeq(), id));
     final rawUsage = _map(result['usage']);
-    final usage = _turnUsage(rawUsage);
     if (rawUsage.isNotEmpty) _reportUsage(rawUsage);
     final response = _string(result['response']);
     if (response != null && _looksLikeContextReport(response)) {
       _reportUsage(_parseContextReport(response));
     }
-    final duration = _number(result['duration_seconds']);
     final status = _string(result['status']);
     emit(
       TurnEnded(
         nextSeq(),
         current,
         interrupted: status != null && status != 'SUCCESS',
-        worked: duration == null
-            ? startedAt == null
-                  ? null
-                  : DateTime.now().difference(startedAt!)
-            : Duration(milliseconds: (duration * 1000).round()),
-        usage: usage,
+        worked: startedAt == null
+            ? null
+            : DateTime.now().difference(startedAt!),
       ),
     );
     onTurnEnded?.call(current);
     resetTurn();
-  }
-
-  TurnUsage? _turnUsage(Map<String, Object?> usage) {
-    if (usage.isEmpty) return null;
-    final input = _int(usage['input_tokens']);
-    final output = _int(usage['output_tokens']);
-    if (input == null && output == null) return null;
-    return TurnUsage(inputTokens: input, outputTokens: output);
   }
 
   void _reportUsage(Map<String, Object?> usage) {
@@ -861,6 +848,4 @@ final class AgyTranslator {
       value is String && value.isNotEmpty ? value : null;
   static int? _int(Object? value) =>
       value is int ? value : int.tryParse('$value');
-  static double? _number(Object? value) =>
-      value is num ? value.toDouble() : double.tryParse('$value');
 }

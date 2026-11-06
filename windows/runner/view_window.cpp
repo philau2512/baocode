@@ -136,6 +136,28 @@ bool IsCharMessage(UINT message) {
          message == WM_DEADCHAR || message == WM_SYSDEADCHAR;
 }
 
+// Modifier state is part of the keyboard event protocol. A synthetic
+// scancode for one can make Flutter receive (for example) Alt down without
+// its Alt modifier flag, which leaves its pressed-key state inconsistent.
+bool IsModifierKey(WPARAM virtual_key) {
+  switch (virtual_key) {
+    case VK_SHIFT:
+    case VK_LSHIFT:
+    case VK_RSHIFT:
+    case VK_CONTROL:
+    case VK_LCONTROL:
+    case VK_RCONTROL:
+    case VK_MENU:
+    case VK_LMENU:
+    case VK_RMENU:
+    case VK_LWIN:
+    case VK_RWIN:
+      return true;
+    default:
+      return false;
+  }
+}
+
 // The scancode bits a keyboard would have given the key message of
 // |virtual_key|; none for a key with no scancode.
 LPARAM ScancodeBitsOf(WPARAM virtual_key) {
@@ -301,7 +323,8 @@ LRESULT CALLBACK ViewWindow::ViewProc(HWND hwnd, UINT const message,
   // to the character it comes with.
   LPARAM key_lparam = lparam;
   if (that != nullptr && IsKeyMessage(message) &&
-      (lparam & kScancodeBits) == 0 && wparam != VK_PACKET) {
+      !IsModifierKey(wparam) && (lparam & kScancodeBits) == 0 &&
+      wparam != VK_PACKET) {
     key_lparam = lparam | ScancodeBitsOf(wparam);
   }
   if (that != nullptr &&

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
 import '../../chat/chat_models.dart';
+import '../../icons/brand_logos.dart';
 import '../agent_kernel.dart';
 import '../kernel_event.dart';
 import '../kernel_types.dart';
@@ -110,36 +111,58 @@ final class AntigravityKernel
   late final _LocalChoice _mode;
   late final _ModelSetting _effort;
 
-  static const _models = [
+  static final _gemini = KernelOptionGroup(
+    'google',
+    'Google',
+    iconBuilder: (size, _) => Image.asset(
+      'assets/model_icons/gemini-color.webp',
+      width: size,
+      height: size,
+    ),
+  );
+  static final _anthropic = KernelOptionGroup(
+    'anthropic',
+    'Anthropic',
+    iconBuilder: (size, color) => BrandLogo('claude', size: size, color: color),
+  );
+  static final _openAi = KernelOptionGroup(
+    'openai',
+    'OpenAI',
+    iconBuilder: (size, color) => BrandLogo('openai', size: size, color: color),
+  );
+
+  static final _models = [
     KernelOption(
       'gemini-3.8-flash-medium',
-      'Gemini 3.8 Flash (Medium)',
+      'Gemini 3.8 Flash',
       Icons.auto_awesome_rounded,
       'Balanced Gemini coding model',
-    ),
-    KernelOption(
-      'gemini-3.8-flash-high',
-      'Gemini 3.8 Flash (High)',
-      Icons.auto_awesome_rounded,
-      'Higher reasoning effort',
-    ),
-    KernelOption(
-      'gemini-3.8-flash-low',
-      'Gemini 3.8 Flash (Low)',
-      Icons.auto_awesome_rounded,
-      'Fast Gemini coding model',
+      group: _gemini,
+      iconBuilder: _gemini.iconBuilder,
     ),
     KernelOption(
       'claude-sonnet-4-6',
-      'Claude Sonnet 4.6',
+      'Claude Sonnet 4.6 (Thinking)',
       Icons.auto_awesome_rounded,
       'Claude through Antigravity',
+      group: _anthropic,
+      iconBuilder: _anthropic.iconBuilder,
     ),
     KernelOption(
       'claude-opus-4-6-thinking',
-      'Claude Opus 4.6 Thinking',
+      'Claude Opus 4.6 (Thinking)',
       Icons.auto_awesome_rounded,
       'High capability Claude model',
+      group: _anthropic,
+      iconBuilder: _anthropic.iconBuilder,
+    ),
+    KernelOption(
+      'gpt-oss-120b-medium',
+      'GPT-OSS 120B',
+      Icons.auto_awesome_rounded,
+      'OpenAI open-weight coding model',
+      group: _openAi,
+      iconBuilder: _openAi.iconBuilder,
     ),
   ];
 
@@ -168,13 +191,6 @@ final class AntigravityKernel
     KernelOption('low', 'Low', Icons.speed_rounded, 'Fastest reasoning'),
     KernelOption('medium', 'Medium', Icons.speed_rounded, 'Balanced reasoning'),
     KernelOption('high', 'High', Icons.bolt_rounded, 'Deeper reasoning'),
-    KernelOption(
-      'xhigh',
-      'Extra high',
-      Icons.bolt_rounded,
-      'Maximum supported reasoning',
-    ),
-    KernelOption('max', 'Max', Icons.bolt_rounded, 'Maximum reasoning'),
   ];
 
   static const _builtInCommands = [
@@ -564,13 +580,9 @@ final class AntigravityKernel
     _turn = turn.id;
     _translator.beginTurn(turn.id);
     emit(TurnStarted(nextSeq, turn.id));
-    emit(
-      ItemUpserted(
-        nextSeq,
-        '${turn.id}:user',
-        UserMessageItem(text: turn.text),
-      ),
-    );
+    // Transcript attaches a finished turn's duration and copy footer to the
+    // user item whose id matches [TurnEnded.turnId].
+    emit(ItemUpserted(nextSeq, turn.id, UserMessageItem(text: turn.text)));
     unawaited(_send(turn));
   }
 

@@ -172,9 +172,11 @@ void main() {
 
     expect(kernel.sessionId, 'conversation-1');
     expect(events.whereType<TurnStarted>(), isNotEmpty);
+    expect(events.whereType<ItemUpserted>().first.id, 'turn-1');
     expect(events.whereType<TextDelta>().single.text, 'hello back');
-    expect(events.whereType<TurnEnded>().single.interrupted, isFalse);
-    expect(events.whereType<TurnEnded>().single.usage?.totalTokens, 5);
+    final ended = events.whereType<TurnEnded>().single;
+    expect(ended.interrupted, isFalse);
+    expect(ended.usage, isNull);
 
     await subscription.cancel();
     kernel.dispose();
