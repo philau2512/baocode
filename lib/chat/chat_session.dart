@@ -227,6 +227,11 @@ class ChatSession extends ChangeNotifier implements ChatFeed {
   Future<ChangeReview?>? _reviewOpening;
   ChangeReview? _review;
 
+  /// Edits reported while the asynchronous review store is opening. Their
+  /// originals are required to create an inline Keep/Undo review, so they
+  /// must not be dropped before [_review] becomes available.
+  final List<({FileChange change, FileOriginal? original})> _pendingReviewEdits = [];
+
   /// The review, while it holds: null before it opened, or once it failed
   /// (the changes are then those the kernel reported).
   ChangeReview? get _activeReview => switch (_review) {
@@ -251,6 +256,10 @@ class ChatSession extends ChangeNotifier implements ChatFeed {
       _review = review
         ..session = sessionId
         ..addListener(_reviewChanged);
+      for (final edit in _pendingReviewEdits) {
+        review.report(edit.change, original: edit.original);
+      }
+      _pendingReviewEdits.clear();
       notifyListeners();
       return review;
     }, onError: (Object _) => null);
@@ -262,13 +271,17 @@ class ChatSession extends ChangeNotifier implements ChatFeed {
 
   void _reviewEvent(KernelEvent event) {
     final review = _review;
-    if (review == null) return;
-    review.session = sessionId;
     switch (event) {
-      case TurnEnded():
-        unawaited(review.look());
       case FileEdited(:final change, :final original):
+        if (review == null) {
+          _pendingReviewEdits.add((change: change, original: original));
+          return;
+        }
+        review.session = sessionId;
         review.report(change, original: original);
+      case TurnEnded() when review != null:
+        review.session = sessionId;
+        unawaited(review.look());
       default:
     }
   }

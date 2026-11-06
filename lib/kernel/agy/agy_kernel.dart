@@ -39,7 +39,9 @@ final class AntigravityKernel
     this.descriptor,
     this._context, {
     Future<AgyTransport> Function(AgyLaunch launch)? start,
-  }) : _start = start ?? startAgy {
+    Future<List<KernelCommand>> Function(String cwd)? loadCommands,
+  }) : _start = start ?? startAgy,
+       _loadCommands = loadCommands ?? _commandsIn {
     _history = AgyHistory(emit: emit, nextSeq: () => nextSeq);
     _translator = AgyTranslator(
       emit: emit,
@@ -88,6 +90,7 @@ final class AntigravityKernel
   final KernelDescriptor descriptor;
   final KernelContext _context;
   final Future<AgyTransport> Function(AgyLaunch launch) _start;
+  final Future<List<KernelCommand>> Function(String cwd) _loadCommands;
   late final AgyTranslator _translator;
   late final AgyHistory _history;
   final AgyEditTranscriptReader _editTranscript = AgyEditTranscriptReader();
@@ -102,45 +105,131 @@ final class AntigravityKernel
     final tasks = await _subagentTasks.read(conversation: conversation);
     if (tasks.isNotEmpty) emit(TasksReported(nextSeq, tasks));
   }
+
   late final _ModelChoice _model;
   late final _LocalChoice _mode;
   late final _ModelSetting _effort;
 
   static const _models = [
-    KernelOption('gemini-3.8-flash-medium', 'Gemini 3.8 Flash (Medium)', Icons.auto_awesome_rounded, 'Balanced Gemini coding model'),
-    KernelOption('gemini-3.8-flash-high', 'Gemini 3.8 Flash (High)', Icons.auto_awesome_rounded, 'Higher reasoning effort'),
-    KernelOption('gemini-3.8-flash-low', 'Gemini 3.8 Flash (Low)', Icons.auto_awesome_rounded, 'Fast Gemini coding model'),
-    KernelOption('claude-sonnet-4-6', 'Claude Sonnet 4.6', Icons.auto_awesome_rounded, 'Claude through Antigravity'),
-    KernelOption('claude-opus-4-6-thinking', 'Claude Opus 4.6 Thinking', Icons.auto_awesome_rounded, 'High capability Claude model'),
+    KernelOption(
+      'gemini-3.8-flash-medium',
+      'Gemini 3.8 Flash (Medium)',
+      Icons.auto_awesome_rounded,
+      'Balanced Gemini coding model',
+    ),
+    KernelOption(
+      'gemini-3.8-flash-high',
+      'Gemini 3.8 Flash (High)',
+      Icons.auto_awesome_rounded,
+      'Higher reasoning effort',
+    ),
+    KernelOption(
+      'gemini-3.8-flash-low',
+      'Gemini 3.8 Flash (Low)',
+      Icons.auto_awesome_rounded,
+      'Fast Gemini coding model',
+    ),
+    KernelOption(
+      'claude-sonnet-4-6',
+      'Claude Sonnet 4.6',
+      Icons.auto_awesome_rounded,
+      'Claude through Antigravity',
+    ),
+    KernelOption(
+      'claude-opus-4-6-thinking',
+      'Claude Opus 4.6 Thinking',
+      Icons.auto_awesome_rounded,
+      'High capability Claude model',
+    ),
   ];
 
   static const _modes = [
-    KernelOption('auto', 'Auto', Icons.all_inclusive_rounded, 'Antigravity chooses the execution policy'),
-    KernelOption('accept-edits', 'Accept edits', Icons.edit_rounded, 'Allow workspace edits'),
-    KernelOption('plan', 'Plan', Icons.assignment_outlined, 'Plan before editing'),
+    KernelOption(
+      'auto',
+      'Auto',
+      Icons.all_inclusive_rounded,
+      'Antigravity chooses the execution policy',
+    ),
+    KernelOption(
+      'accept-edits',
+      'Accept edits',
+      Icons.edit_rounded,
+      'Allow workspace edits',
+    ),
+    KernelOption(
+      'plan',
+      'Plan',
+      Icons.assignment_outlined,
+      'Plan before editing',
+    ),
   ];
 
   static const _efforts = [
     KernelOption('low', 'Low', Icons.speed_rounded, 'Fastest reasoning'),
     KernelOption('medium', 'Medium', Icons.speed_rounded, 'Balanced reasoning'),
     KernelOption('high', 'High', Icons.bolt_rounded, 'Deeper reasoning'),
-    KernelOption('xhigh', 'Extra high', Icons.bolt_rounded, 'Maximum supported reasoning'),
+    KernelOption(
+      'xhigh',
+      'Extra high',
+      Icons.bolt_rounded,
+      'Maximum supported reasoning',
+    ),
     KernelOption('max', 'Max', Icons.bolt_rounded, 'Maximum reasoning'),
   ];
 
-  static const _commands = [
-    KernelCommand('context', 'Show context usage and loaded files', Icons.data_usage_rounded),
-    KernelCommand('refresh-context', 'Refresh context usage from Antigravity', Icons.refresh_rounded),
-    KernelCommand('model', 'Switch Antigravity model', Icons.auto_awesome_rounded, argumentHint: '<model>'),
-    KernelCommand('mode', 'Switch Antigravity execution mode', Icons.tune_rounded, argumentHint: '<auto|accept-edits|plan>'),
-    KernelCommand('effort', 'Set reasoning effort', Icons.bolt_rounded, argumentHint: '<low|medium|high|xhigh|max>'),
-    KernelCommand('clear', 'Start a new Antigravity conversation', Icons.refresh_rounded),
-    KernelCommand('compact', 'Compact the Antigravity conversation', Icons.compress_rounded),
-    KernelCommand('help', 'Show Antigravity slash commands', Icons.help_outline_rounded),
+  static const _builtInCommands = [
+    KernelCommand(
+      'context',
+      'Show context usage and loaded files',
+      Icons.data_usage_rounded,
+    ),
+    KernelCommand(
+      'refresh-context',
+      'Refresh context usage from Antigravity',
+      Icons.refresh_rounded,
+    ),
+    KernelCommand(
+      'model',
+      'Switch Antigravity model',
+      Icons.auto_awesome_rounded,
+      argumentHint: '<model>',
+    ),
+    KernelCommand(
+      'mode',
+      'Switch Antigravity execution mode',
+      Icons.tune_rounded,
+      argumentHint: '<auto|accept-edits|plan>',
+    ),
+    KernelCommand(
+      'effort',
+      'Set reasoning effort',
+      Icons.bolt_rounded,
+      argumentHint: '<low|medium|high|xhigh|max>',
+    ),
+    KernelCommand(
+      'clear',
+      'Start a new Antigravity conversation',
+      Icons.refresh_rounded,
+    ),
+    KernelCommand(
+      'compact',
+      'Compact the Antigravity conversation',
+      Icons.compress_rounded,
+    ),
+    KernelCommand(
+      'help',
+      'Show Antigravity slash commands',
+      Icons.help_outline_rounded,
+    ),
   ];
+  List<KernelCommand> _commands = _builtInCommands;
+  bool _commandsLoaded = false;
 
   @override
-  List<KernelCommand> get commands => _commands;
+  List<KernelCommand> get commands {
+    _loadProjectCommands();
+    return _commands;
+  }
 
   String? _selectedModel = _models.first.id;
   String _selectedMode = 'auto';
@@ -234,6 +323,110 @@ final class AntigravityKernel
 
   String get _cwd => _context.cwd ?? _context.resume?.cwd ?? '.';
 
+  void _loadProjectCommands() {
+    if (_commandsLoaded) return;
+    _commandsLoaded = true;
+    unawaited(() async {
+      final skills = await _loadCommands(_cwd);
+      if (_disposed || skills.isEmpty) return;
+      _commands = [..._builtInCommands, ...skills];
+      emitInfoChanged();
+    }());
+  }
+
+  static Future<List<KernelCommand>> _commandsIn(String cwd) async {
+    final commands = <String, KernelCommand>{};
+    await _addSkills(commands, Directory(p.join(cwd, '.claude', 'skills')));
+    await _addCommands(commands, Directory(p.join(cwd, '.claude', 'commands')));
+    final userProfile = Platform.environment['USERPROFILE'];
+    if (userProfile != null && userProfile.isNotEmpty) {
+      await _addCommands(
+        commands,
+        Directory(p.join(userProfile, '.claude', 'commands')),
+      );
+    }
+    final loaded = commands.values.toList()
+      ..sort((left, right) => left.name.compareTo(right.name));
+    return loaded;
+  }
+
+  static Future<void> _addSkills(
+    Map<String, KernelCommand> commands,
+    Directory root,
+  ) async {
+    if (!await root.exists()) return;
+    await for (final entity in root.list()) {
+      if (entity is! Directory) continue;
+      final text = await _readCommandFile(
+        File(p.join(entity.path, 'SKILL.md')),
+      );
+      if (text == null) continue;
+      final name = _frontMatterValue(text, 'name') ?? p.basename(entity.path);
+      final description =
+          _frontMatterValue(text, 'description') ?? _description(text);
+      if (name.isNotEmpty && description != null) {
+        commands.putIfAbsent(
+          name,
+          () => KernelCommand(name, description, Icons.auto_awesome_rounded),
+        );
+      }
+    }
+  }
+
+  static Future<void> _addCommands(
+    Map<String, KernelCommand> commands,
+    Directory root,
+  ) async {
+    if (!await root.exists()) return;
+    await for (final entity in root.list()) {
+      if (entity is! File || p.extension(entity.path).toLowerCase() != '.md')
+        continue;
+      final text = await _readCommandFile(entity);
+      if (text == null) continue;
+      final name = p.basenameWithoutExtension(entity.path);
+      final description =
+          _frontMatterValue(text, 'description') ?? _description(text);
+      if (description != null) {
+        commands.putIfAbsent(
+          name,
+          () => KernelCommand(name, description, Icons.auto_awesome_rounded),
+        );
+      }
+    }
+  }
+
+  static Future<String?> _readCommandFile(File file) async {
+    try {
+      return await file.readAsString();
+    } on FileSystemException {
+      // A removed or inaccessible command must not block the composer.
+      return null;
+    }
+  }
+
+  static String? _description(String text) {
+    for (final raw in text.split('\n')) {
+      final line = raw.trim();
+      if (line.isEmpty || line == '---' || line.startsWith('#')) continue;
+      if (line.startsWith('name:') || line.startsWith('description:')) continue;
+      return line;
+    }
+    return null;
+  }
+
+  static String? _frontMatterValue(String text, String key) {
+    final lines = text.split('\n');
+    if (lines.firstOrNull?.trim() != '---') return null;
+    for (var index = 1; index < lines.length; index++) {
+      final line = lines[index].trim();
+      if (line == '---') return null;
+      if (!line.startsWith('$key:')) continue;
+      final value = line.substring(key.length + 1).trim();
+      return value.replaceAll(RegExp("^[\\\"']|[\\\"']\$"), '');
+    }
+    return null;
+  }
+
   Future<String?> _readFile(String path) async {
     try {
       final file = File(p.isAbsolute(path) ? path : p.join(_cwd, path));
@@ -243,7 +436,9 @@ final class AntigravityKernel
     }
   }
 
-  Future<({String before, String after})?> _readEditSnapshot(String path) async {
+  Future<({String before, String after})?> _readEditSnapshot(
+    String path,
+  ) async {
     final conversation = _sessionId;
     if (conversation == null) return null;
     for (var attempt = 0; attempt < 10; attempt++) {
@@ -265,13 +460,16 @@ final class AntigravityKernel
   }
 
   Future<void> _ensureStarted() {
-    if (_disposed) return Future.error(StateError('Antigravity kernel is disposed'));
-    if (_transport != null && _health.status == KernelHealthStatus.ready) return Future.value();
+    if (_disposed)
+      return Future.error(StateError('Antigravity kernel is disposed'));
+    if (_transport != null && _health.status == KernelHealthStatus.ready)
+      return Future.value();
     return _starting ??= _launch().whenComplete(() => _starting = null);
   }
 
   Future<void> _launch() async {
     await _stopped;
+    _loadProjectCommands();
     final session = _context.resume;
     if (!_historyLoaded && session != null) {
       _historyLoaded = true;
@@ -298,14 +496,29 @@ final class AntigravityKernel
           _transport = null;
           _subscription = null;
           if (!_disposed && _health.status != KernelHealthStatus.idle) {
-            _setHealth(const KernelHealth(KernelHealthStatus.failed, message: 'Antigravity stopped'));
+            _setHealth(
+              const KernelHealth(
+                KernelHealthStatus.failed,
+                message: 'Antigravity stopped',
+              ),
+            );
           }
         }
       });
-      _subscription = transport.messages.listen(_receive, onError: _failed, onDone: _done);
+      _subscription = transport.messages.listen(
+        _receive,
+        onError: _failed,
+        onDone: _done,
+      );
       _setHealth(KernelHealth.ready);
     } on Object catch (error) {
-      _setHealth(KernelHealth(KernelHealthStatus.failed, message: 'Antigravity could not start', detail: '$error'));
+      _setHealth(
+        KernelHealth(
+          KernelHealthStatus.failed,
+          message: 'Antigravity could not start',
+          detail: '$error',
+        ),
+      );
       rethrow;
     }
   }
@@ -321,7 +534,13 @@ final class AntigravityKernel
   }
 
   void _failed(Object error) {
-    _setHealth(KernelHealth(KernelHealthStatus.failed, message: 'Antigravity stream failed', detail: '$error'));
+    _setHealth(
+      KernelHealth(
+        KernelHealthStatus.failed,
+        message: 'Antigravity stream failed',
+        detail: '$error',
+      ),
+    );
   }
 
   void _done() {
@@ -334,14 +553,21 @@ final class AntigravityKernel
   @override
   void send(KernelTurn turn) {
     if (_disposed || _turn != null) return;
-    if (turn.text.trim() == '/context' || turn.text.trim() == '/refresh-context') {
+    if (turn.text.trim() == '/context' ||
+        turn.text.trim() == '/refresh-context') {
       unawaited(refreshUsage());
       return;
     }
     _turn = turn.id;
     _translator.beginTurn(turn.id);
     emit(TurnStarted(nextSeq, turn.id));
-    emit(ItemUpserted(nextSeq, '${turn.id}:user', UserMessageItem(text: turn.text)));
+    emit(
+      ItemUpserted(
+        nextSeq,
+        '${turn.id}:user',
+        UserMessageItem(text: turn.text),
+      ),
+    );
     unawaited(_send(turn));
   }
 
@@ -350,13 +576,20 @@ final class AntigravityKernel
       await _ensureStarted();
       if (_turn != turn.id) return;
       final transport = _transport;
-      if (transport == null) throw StateError('Antigravity transport is unavailable');
+      if (transport == null)
+        throw StateError('Antigravity transport is unavailable');
       final imagePaths = await _images.save(turn.images);
-      transport.write(AgyLaunch(cwd: _cwd).userMessage(
-        _imagePrompt(turn.text, imagePaths),
-      ));
+      transport.write(
+        AgyLaunch(cwd: _cwd).userMessage(_imagePrompt(turn.text, imagePaths)),
+      );
     } on Object catch (error) {
-      _setHealth(KernelHealth(KernelHealthStatus.failed, message: 'Antigravity turn failed', detail: '$error'));
+      _setHealth(
+        KernelHealth(
+          KernelHealthStatus.failed,
+          message: 'Antigravity turn failed',
+          detail: '$error',
+        ),
+      );
       if (_turn == turn.id) {
         emit(TurnEnded(nextSeq, turn.id, interrupted: true));
         _turn = null;
@@ -383,9 +616,9 @@ $images''';
       ApprovalAnswer(decision: final decision, :final message) =>
         '${decision.name}${message == null ? '' : ': $message'}',
     };
-    transport.write(AgyLaunch(cwd: _cwd).userMessage(
-      'Answer interaction $requestId: $value',
-    ));
+    transport.write(
+      AgyLaunch(cwd: _cwd).userMessage('Answer interaction $requestId: $value'),
+    );
   }
 
   @override
@@ -431,7 +664,11 @@ $images''';
 }
 
 final class _LocalChoice implements KernelChoiceSource {
-  _LocalChoice({required this.options, required this.selectedValue, required this.onSelected});
+  _LocalChoice({
+    required this.options,
+    required this.selectedValue,
+    required this.onSelected,
+  });
   @override
   List<KernelOption> options;
   final String Function() selectedValue;
@@ -443,13 +680,22 @@ final class _LocalChoice implements KernelChoiceSource {
 }
 
 final class _ModelChoice extends _LocalChoice implements SelectsModel {
-  _ModelChoice({required List<KernelOption> models, required super.selectedValue, required super.onSelected}) : super(options: models);
+  _ModelChoice({
+    required List<KernelOption> models,
+    required super.selectedValue,
+    required super.onSelected,
+  }) : super(options: models);
   @override
   KernelChoiceSource get model => this;
 }
 
 final class _ModelSetting implements ModelSetting {
-  _ModelSetting({required this.options, required this.selectedValue, required this.selectedForValue, required this.onSelected});
+  _ModelSetting({
+    required this.options,
+    required this.selectedValue,
+    required this.selectedForValue,
+    required this.onSelected,
+  });
   final List<KernelOption> Function(String model) options;
   final String? Function() selectedValue;
   final String? Function(String model) selectedForValue;

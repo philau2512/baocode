@@ -31,7 +31,9 @@ final class ProcessTransport implements AgyTransport {
         launch.arguments,
         workingDirectory: launch.cwd,
         includeParentEnvironment: Platform.isWindows,
-        runInShell: Platform.isWindows,
+        // `agy` is an executable already resolved via PATH. Running through
+        // cmd.exe makes a visible console window flash for every AGY turn.
+        runInShell: false,
       );
       return ProcessTransport._(process);
     } on ProcessException {
@@ -39,8 +41,12 @@ final class ProcessTransport implements AgyTransport {
     }
   }
 
-  static Future<void> stopAll({Duration timeout = const Duration(seconds: 3)}) async {
-    await Future.wait([for (final transport in [..._live]) transport._stop(timeout)]);
+  static Future<void> stopAll({
+    Duration timeout = const Duration(seconds: 3),
+  }) async {
+    await Future.wait([
+      for (final transport in [..._live]) transport._stop(timeout),
+    ]);
   }
 
   final Process _process;

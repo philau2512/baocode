@@ -27,18 +27,21 @@ final class AgyTranslator {
   });
 
   final void Function(String requestId, InteractionAnswer answer)?
-      sendInteractionAnswer;
+  sendInteractionAnswer;
 
   final void Function(KernelEvent event) emit;
   final int Function() nextSeq;
   final void Function(String turnId)? onTurnEnded;
   final Future<String?> Function(String path)? readFile;
   final Future<({String before, String after})?> Function(String path)?
-      readEditSnapshot;
+  readEditSnapshot;
   final Future<AgySubagentTranscript> Function(String conversation)?
-      readSubagentTranscript;
+  readSubagentTranscript;
   final void Function(List<KernelTask> tasks)? onTasksChanged;
-  late final AgyInteractionParser _interactions = AgyInteractionParser(emit, nextSeq);
+  late final AgyInteractionParser _interactions = AgyInteractionParser(
+    emit,
+    nextSeq,
+  );
   final Map<String, Future<String?>> _beforeFiles = {};
   final Map<String, String> _reportedOriginals = {};
   final Map<String, AgentItem> _agents = {};
@@ -53,6 +56,7 @@ final class AgyTranslator {
   String? textId;
   int textLength = 0;
   DateTime? startedAt;
+
   /// Maps AGY's tool identity to the stable BaoCode item id. AGY emits
   /// multiple `step_update` events for one tool, so the id must not be based
   /// on the number of updates received.
@@ -114,7 +118,14 @@ final class AgyTranslator {
     _begin();
     final id = textId ??= '$turnId:assistant';
     if (textLength == 0) {
-      emit(ItemUpserted(nextSeq(), id, const AssistantTextItem(''), streaming: true));
+      emit(
+        ItemUpserted(
+          nextSeq(),
+          id,
+          const AssistantTextItem(''),
+          streaming: true,
+        ),
+      );
     }
     emit(TextDelta(nextSeq(), id, textLength, delta));
     textLength += delta.length;
@@ -132,9 +143,10 @@ final class AgyTranslator {
         : _map(step['parameters']).isNotEmpty
         ? _map(step['parameters'])
         : _decodeParameters(step['arguments']) ??
-            _decodeParameters(info['arguments']) ??
-            const <String, Object?>{};
-    final toolKey = _string(step['tool_id']) ??
+              _decodeParameters(info['arguments']) ??
+              const <String, Object?>{};
+    final toolKey =
+        _string(step['tool_id']) ??
         _string(step['id']) ??
         _string(info['tool_id']) ??
         _string(info['id']) ??
@@ -145,14 +157,15 @@ final class AgyTranslator {
     );
     final interactionId = _interactions.parse(step, info);
     if (interactionId != null) _interactionTools[interactionId] = name;
-    final state = (_string(step['state']) ??
-            _string(step['status']) ??
-            _string(step['tool_status']) ??
-            _string(info['state']) ??
-            _string(info['status']) ??
-            _string(info['tool_status']) ??
-            'ACTIVE')
-        .toUpperCase();
+    final state =
+        (_string(step['state']) ??
+                _string(step['status']) ??
+                _string(step['tool_status']) ??
+                _string(info['state']) ??
+                _string(info['status']) ??
+                _string(info['tool_status']) ??
+                'ACTIVE')
+            .toUpperCase();
     final done = const {
       'DONE',
       'COMPLETED',
@@ -169,32 +182,44 @@ final class AgyTranslator {
       'CANCELLED',
       'CANCELED',
     }.contains(state);
-    final output = _string(info['output']) ??
+    final output =
+        _string(info['output']) ??
         _string(info['result']) ??
         _string(info['error']) ??
         _string(step['output']) ??
         _string(step['error']);
-    final progress = _string(info['description']) ??
+    final progress =
+        _string(info['description']) ??
         _string(info['summary']) ??
         _string(step['description']) ??
         _string(step['summary']);
-    final original = _string(info['originalContent']) ??
+    final readRange = _readRange(parameters);
+    final original =
+        _string(info['originalContent']) ??
         _string(info['original_content']) ??
         _string(step['originalContent']) ??
         _string(step['original_content']) ??
         _string(parameters['Target']) ??
         _string(parameters['target']);
-    final newContent = _string(info['newContent']) ??
+    final newContent =
+        _string(info['newContent']) ??
         _string(info['new_content']) ??
         _string(step['newContent']) ??
         _string(step['new_content']) ??
         _string(parameters['Replacement']) ??
         _string(parameters['replacement']);
-    final command = _string(parameters['CommandLine']) ?? _string(parameters['command']);
+    final command =
+        _string(parameters['CommandLine']) ?? _string(parameters['command']);
     final path = _string(parameters['Path']) ?? _string(parameters['path']);
     final isAgent = _isAgentTool(name);
     _tools.putIfAbsent(id, DateTime.now);
-    final agentId = _agentId(step, subagentInfo.isEmpty ? info : subagentInfo, parameters) ?? id;
+    final agentId =
+        _agentId(
+          step,
+          subagentInfo.isEmpty ? info : subagentInfo,
+          parameters,
+        ) ??
+        id;
     final parentAgent = _parentAgentId(step, info, parameters);
     if (parentAgent case final parent?) {
       _agentParents[agentId] = parent;
@@ -237,7 +262,9 @@ final class AgyTranslator {
         ? TerminalItem(
             command: command,
             output: output ?? '',
-            status: failed ? CommandStatus.failed : done
+            status: failed
+                ? CommandStatus.failed
+                : done
                 ? CommandStatus.succeeded
                 : CommandStatus.running,
             background: false,
@@ -248,12 +275,14 @@ final class AgyTranslator {
             target: mcp?.target ?? path ?? name,
             path: path,
             results: parsedOutput.results,
-            detail: progress,
+            detail: kind == ToolKind.read ? readRange ?? progress : progress,
             label: mcp?.label ?? name,
             input: parameters,
             output: output,
             images: parsedOutput.images,
-            status: failed ? ToolStatus.failed : done
+            status: failed
+                ? ToolStatus.failed
+                : done
                 ? ToolStatus.succeeded
                 : ToolStatus.running,
           );
@@ -264,13 +293,15 @@ final class AgyTranslator {
       _updateParent(finishedAgent);
     }
     if (path != null && done && kind == ToolKind.edit) {
-      unawaited(_reportFile(
-        path,
-        turnId: turnId,
-        itemId: id,
-        before: original,
-        after: newContent,
-      ));
+      unawaited(
+        _reportFile(
+          path,
+          turnId: turnId,
+          itemId: id,
+          before: original,
+          after: newContent,
+        ),
+      );
     }
   }
 
@@ -291,8 +322,23 @@ final class AgyTranslator {
     }
   }
 
+  static String? _readRange(Map<String, Object?> parameters) {
+    int? line(Object? value) => switch (value) {
+      int value when value > 0 => value,
+      String value => switch (int.tryParse(value)) {
+        final parsed? when parsed > 0 => parsed,
+        _ => null,
+      },
+      _ => null,
+    };
+    final start = line(parameters['StartLine'] ?? parameters['start_line']);
+    if (start == null) return null;
+    final end = line(parameters['EndLine'] ?? parameters['end_line']);
+    return end == null || end <= start ? 'L$start' : 'L$start-$end';
+  }
 
-  static String _pathKey(String path) => path.replaceAll('\\', '/').toLowerCase();
+  static String _pathKey(String path) =>
+      path.replaceAll('\\', '/').toLowerCase();
 
   static bool _isAgentTool(String name) => const {
     'invoke_subagent',
@@ -319,9 +365,10 @@ final class AgyTranslator {
       _string(input['TaskId']) ??
       _string(input['task_id']) ??
       _string(input['conversation_id']) ??
-      RegExp(r'(?:Task ID|Task):\s*([^\s]+)', caseSensitive: false)
-          .firstMatch(output ?? '')
-          ?.group(1);
+      RegExp(
+        r'(?:Task ID|Task):\s*([^\s]+)',
+        caseSensitive: false,
+      ).firstMatch(output ?? '')?.group(1);
 
   static KernelTask _task(
     String id,
@@ -380,7 +427,8 @@ final class AgyTranslator {
     Map<String, Object?> step,
     Map<String, Object?> info,
     Map<String, Object?> parameters,
-  ) => _string(step['subagent_id']) ??
+  ) =>
+      _string(step['subagent_id']) ??
       _string(step['conversation_id']) ??
       _string(info['subagent_id']) ??
       _string(info['conversation_id']) ??
@@ -392,7 +440,8 @@ final class AgyTranslator {
     Map<String, Object?> step,
     Map<String, Object?> info,
     Map<String, Object?> parameters,
-  ) => _string(step['parent_subagent_id']) ??
+  ) =>
+      _string(step['parent_subagent_id']) ??
       _string(info['parent_subagent_id']) ??
       _string(parameters['parent_subagent_id']);
 
@@ -407,32 +456,33 @@ final class AgyTranslator {
     required String? parentId,
   }) {
     final existing = _agents[agentId];
-    final prompt = _string(
+    final prompt =
+        _string(
           parameters['Prompt'] ??
               parameters['prompt'] ??
               parameters['initial_prompt'],
         ) ??
         _string(info['Prompt'] ?? info['prompt'] ?? info['initial_prompt']);
-    final resolvedDescription = _string(
-          parameters['Role'] ?? parameters['role'],
-        ) ??
+    final resolvedDescription =
+        _string(parameters['Role'] ?? parameters['role']) ??
         _string(info['Role'] ?? info['role']) ??
         _string(parameters['description']) ??
         _string(info['description']) ??
         name;
     final description = resolvedDescription;
-    final item = existing ?? AgentItem(
-      description: description,
-      id: agentId,
-      agentType: _string(
-        parameters['TypeName'] ?? parameters['type_name'],
-      ) ??
-          _string(info['TypeName'] ?? info['type_name']) ??
-          _string(info['type']),
-      prompt: prompt,
-      status: CommandStatus.running,
-      startedAt: startedAt,
-    );
+    final item =
+        existing ??
+        AgentItem(
+          description: description,
+          id: agentId,
+          agentType:
+              _string(parameters['TypeName'] ?? parameters['type_name']) ??
+              _string(info['TypeName'] ?? info['type_name']) ??
+              _string(info['type']),
+          prompt: prompt,
+          status: CommandStatus.running,
+          startedAt: startedAt,
+        );
     final children = _agentChildren[agentId] ?? const <ChatItem>[];
     _agents[agentId] = item.copyWith(
       description: description,
@@ -487,7 +537,9 @@ final class AgyTranslator {
 
   void _reportAgentChild(String agentId, String childId, ChatItem child) {
     final children = [...?_agentChildren[agentId]];
-    final index = children.indexWhere((item) => item is AgentItem && item.id == childId);
+    final index = children.indexWhere(
+      (item) => item is AgentItem && item.id == childId,
+    );
     if (index >= 0) {
       children[index] = child;
     } else {
@@ -508,8 +560,10 @@ final class AgyTranslator {
   }
 
   static CommandStatus _agentStatus(String state) => switch (state) {
-    'DONE' || 'COMPLETED' || 'SUCCESS' || 'SUCCEEDED' =>
-      CommandStatus.succeeded,
+    'DONE' ||
+    'COMPLETED' ||
+    'SUCCESS' ||
+    'SUCCEEDED' => CommandStatus.succeeded,
     'ERROR' || 'FAILED' || 'CANCELLED' || 'CANCELED' => CommandStatus.failed,
     _ => CommandStatus.running,
   };
@@ -527,7 +581,8 @@ final class AgyTranslator {
       before ??= snapshot?.before;
       after ??= snapshot?.after;
     }
-    before ??= _reportedOriginals[key] ??
+    before ??=
+        _reportedOriginals[key] ??
         await _beforeFiles[key]?.catchError((_) => null);
     after ??= _reportedOriginals['$key:after'] ?? await readFile?.call(path);
     if (after == null && before == null) return;
@@ -536,7 +591,9 @@ final class AgyTranslator {
     final oldLines = (before ?? '').split('\n');
     final newLines = (after ?? '').split('\n');
     final diffLines = <DiffLine>[];
-    final common = oldLines.length < newLines.length ? oldLines.length : newLines.length;
+    final common = oldLines.length < newLines.length
+        ? oldLines.length
+        : newLines.length;
     var added = 0;
     var removed = 0;
     for (var i = 0; i < common; i++) {
@@ -557,26 +614,29 @@ final class AgyTranslator {
       diffLines.add(DiffLine(DiffLineType.added, i + 1, newLines[i]));
       added++;
     }
-    emit(ItemUpserted(
-      nextSeq(),
-      itemId,
-      CodeDiffItem(
-        fileName: path.split(RegExp(r'[/\\]')).last,
-        directory: path.contains(RegExp(r'[/\\]'))
-            ? path.substring(0, path.lastIndexOf(RegExp(r'[/\\]')))
-            : '',
-        lines: diffLines,
-        added: added,
-        removed: removed,
+    emit(
+      ItemUpserted(
+        nextSeq(),
+        itemId,
+        CodeDiffItem(
+          fileName: path.split(RegExp(r'[/\\]')).last,
+          directory: path.contains(RegExp(r'[/\\]'))
+              ? path.substring(0, path.lastIndexOf(RegExp(r'[/\\]')))
+              : '',
+          lines: diffLines,
+          added: added,
+          removed: removed,
+        ),
       ),
-    ));
+    );
     emit(
       FileEdited(
-
         nextSeq(),
         FileChange(path: path, added: added, removed: removed),
         turnId: turnId,
-        original: before == null ? const OriginalText(null) : OriginalByPatch(diff),
+        original: before == null
+            ? const OriginalText(null)
+            : OriginalByPatch(diff),
       ),
     );
     _beforeFiles.remove(key);
@@ -590,7 +650,9 @@ final class AgyTranslator {
       '+++ b/file',
       '@@ -1,${oldLines.length} +1,${newLines.length} @@',
     ];
-    final common = oldLines.length < newLines.length ? oldLines.length : newLines.length;
+    final common = oldLines.length < newLines.length
+        ? oldLines.length
+        : newLines.length;
     for (var i = 0; i < common; i++) {
       if (oldLines[i] == newLines[i]) {
         lines.add(' ${oldLines[i]}');
@@ -629,8 +691,8 @@ final class AgyTranslator {
         interrupted: status != null && status != 'SUCCESS',
         worked: duration == null
             ? startedAt == null
-                ? null
-                : DateTime.now().difference(startedAt!)
+                  ? null
+                  : DateTime.now().difference(startedAt!)
             : Duration(milliseconds: (duration * 1000).round()),
         usage: usage,
       ),
@@ -648,15 +710,30 @@ final class AgyTranslator {
   }
 
   void _reportUsage(Map<String, Object?> usage) {
-    emit(UsageReported(nextSeq(), _contextUsage(usage)));
+    final reported = _contextUsage(usage);
+    // AGY stream events expose only this request's token counts. They are not
+    // the conversation-wide `/context` reading, so never replace one here.
+    if (_isTurnOnlyUsage(usage, reported)) return;
+    emit(UsageReported(nextSeq(), reported));
+  }
+
+  bool _isTurnOnlyUsage(Map<String, Object?> usage, ContextUsage reported) {
+    if (_categories(usage).isNotEmpty || _detail(usage) != null) return false;
+    final input = _int(usage['input_tokens']);
+    final output = _int(usage['output_tokens']);
+    final total = _int(usage['total_tokens']);
+    return input != null ||
+        output != null ||
+        total != null && reported.used < 10_000;
   }
 
   ContextUsage _contextUsage(Map<String, Object?> usage) {
-    final total = _int(usage['total_tokens']) ??
-        ((_int(usage['input_tokens']) ?? 0) + (_int(usage['output_tokens']) ?? 0));
-    final window = _int(usage['context_window']) ??
-        _int(usage['max_tokens']) ??
-        1_000_000;
+    final total =
+        _int(usage['total_tokens']) ??
+        ((_int(usage['input_tokens']) ?? 0) +
+            (_int(usage['output_tokens']) ?? 0));
+    final window =
+        _int(usage['context_window']) ?? _int(usage['max_tokens']) ?? 1_000_000;
     final categories = _categories(usage);
     final input = _int(usage['input_tokens']);
     final output = _int(usage['output_tokens']);
@@ -690,10 +767,11 @@ final class AgyTranslator {
       final multiplier = suffix.toLowerCase() == 'm'
           ? 1000000
           : suffix.toLowerCase() == 'k'
-              ? 1000
-              : 1;
+          ? 1000
+          : 1;
       return (value * multiplier).round();
     }
+
     for (final match in linePattern.allMatches(text)) {
       final label = match.group(1)!.trim();
       final value = tokens(match.group(2)!, match.group(3)!);
@@ -707,16 +785,25 @@ final class AgyTranslator {
         categories.last['tokens'] = 0;
       }
     }
-    final total = categories.fold<int>(0, (sum, item) => sum + (item['tokens'] as int));
-    final windowMatch = RegExp(r'Context window.*?([\d.]+)([kKmM])?').firstMatch(text);
+    final total = categories.fold<int>(
+      0,
+      (sum, item) => sum + (item['tokens'] as int),
+    );
+    final windowMatch = RegExp(r'Context window.*?([\d.]+)([kKmM])?')
+        .firstMatch(text);
     final window = windowMatch == null
         ? 1000000
         : tokens(windowMatch.group(1)!, windowMatch.group(2) ?? '');
-    return {'total_tokens': total, 'context_window': window, 'categories': categories};
+    return {
+      'total_tokens': total,
+      'context_window': window,
+      'categories': categories,
+    };
   }
 
   List<ContextSegment> _categories(Map<String, Object?> usage) {
-    final raw = usage['categories'] ??
+    final raw =
+        usage['categories'] ??
         usage['breakdown'] ??
         usage['token_breakdown'] ??
         usage['context_breakdown'];
@@ -725,7 +812,8 @@ final class AgyTranslator {
       for (final value in raw)
         if (value is Map)
           if (_string(value['name'] ?? value['label']) case final label?)
-            if (_int(value['tokens'] ?? value['token_count']) case final tokens?)
+            if (_int(value['tokens'] ?? value['token_count'])
+                case final tokens?)
               ContextSegment(
                 label,
                 tokens,
@@ -735,7 +823,8 @@ final class AgyTranslator {
   }
 
   ContextDetail? _detail(Map<String, Object?> usage) {
-    final files = usage['files'] ?? usage['loaded_files'] ?? usage['context_files'];
+    final files =
+        usage['files'] ?? usage['loaded_files'] ?? usage['context_files'];
     if (files is! List || files.isEmpty) return null;
     final items = <ContextItem>[];
     for (final value in files) {
@@ -758,15 +847,20 @@ final class AgyTranslator {
     return items.isEmpty ? null : ContextDetail(memoryFiles: items);
   }
 
-  static ContextKind _contextKind(Object? value) => switch ('$value'.toLowerCase()) {
-    'free' => ContextKind.free,
-    'buffer' || 'reserved' => ContextKind.buffer,
-    'deferred' => ContextKind.deferred,
-    _ => ContextKind.used,
-  };
+  static ContextKind _contextKind(Object? value) =>
+      switch ('$value'.toLowerCase()) {
+        'free' => ContextKind.free,
+        'buffer' || 'reserved' => ContextKind.buffer,
+        'deferred' => ContextKind.deferred,
+        _ => ContextKind.used,
+      };
 
-  static Map<String, Object?> _map(Object? value) => value is Map ? value.cast<String, Object?>() : const {};
-  static String? _string(Object? value) => value is String && value.isNotEmpty ? value : null;
-  static int? _int(Object? value) => value is int ? value : int.tryParse('$value');
-  static double? _number(Object? value) => value is num ? value.toDouble() : double.tryParse('$value');
+  static Map<String, Object?> _map(Object? value) =>
+      value is Map ? value.cast<String, Object?>() : const {};
+  static String? _string(Object? value) =>
+      value is String && value.isNotEmpty ? value : null;
+  static int? _int(Object? value) =>
+      value is int ? value : int.tryParse('$value');
+  static double? _number(Object? value) =>
+      value is num ? value.toDouble() : double.tryParse('$value');
 }

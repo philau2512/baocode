@@ -64,13 +64,20 @@ void main() {
         'tool_id': 'read-1',
         'tool_name': 'read_file',
         'state': 'COMPLETED',
-        'tool_info': {'parameters': {'Path': r'C:\\PROJECTS\\baocode\\README.md'}},
+        'tool_info': {
+          'parameters': {
+            'Path': r'C:\\PROJECTS\\baocode\\README.md',
+            'StartLine': 10,
+            'EndLine': '15',
+          },
+        },
       },
     });
 
     final item = events.whereType<ItemUpserted>().single.item as ToolCallItem;
     expect(item.kind, ToolKind.read);
     expect(item.path, r'C:\\PROJECTS\\baocode\\README.md');
+    expect(item.detail, 'L10-15');
   });
 
   test('uses subagent prompt and role from tool info when parameters are normalized there', () {
@@ -129,9 +136,7 @@ void main() {
             'TypeName': 'research',
             'Prompt': 'Inspect test_edit.md',
           },
-          'subagent_info': {
-            'conversation_id': 'subagent-1',
-          },
+          'subagent_info': {'conversation_id': 'subagent-1'},
           'output': '12 lines',
         },
       },
@@ -265,14 +270,22 @@ Free space 1.0M tokens (97%)''',
     });
 
     final usage = events.whereType<UsageReported>().single.usage;
-    expect(usage.segments.map((segment) => segment.label), containsAll([
-      'User messages',
-      'Agent responses',
-      'Tool calls',
-      'System prompt',
-      'Free space',
-    ]));
-    expect(usage.segments.firstWhere((segment) => segment.label == 'Tool calls').tokens, 0);
+    expect(
+      usage.segments.map((segment) => segment.label),
+      containsAll([
+        'User messages',
+        'Agent responses',
+        'Tool calls',
+        'System prompt',
+        'Free space',
+      ]),
+    );
+    expect(
+      usage.segments
+          .firstWhere((segment) => segment.label == 'Tool calls')
+          .tokens,
+      0,
+    );
   });
 
   test('reports AGY context categories and loaded files when provided', () {
@@ -310,6 +323,40 @@ Free space 1.0M tokens (97%)''',
     expect(usage.segments, hasLength(5));
     expect(usage.segments.last.kind, ContextKind.free);
     expect(usage.detail?.memoryFiles.single.name, 'README.md');
+  });
+
+  test('does not overwrite a context report with turn-only token usage', () {
+    final events = <KernelEvent>[];
+    final translator = AgyTranslator(
+      emit: events.add,
+      nextSeq: () => events.length,
+    )..beginTurn('turn-1');
+
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'agent_response',
+        'usage': {
+          'total_tokens': 167500,
+          'context_window': 1000000,
+          'categories': [
+            {'name': 'Tool calls', 'tokens': 107700},
+            {'name': 'Free space', 'tokens': 832500, 'kind': 'free'},
+          ],
+        },
+      },
+    });
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'agent_response',
+        'usage': {'input_tokens': 3200, 'output_tokens': 400},
+      },
+    });
+
+    final usage = events.whereType<UsageReported>().toList();
+    expect(usage, hasLength(1));
+    expect(usage.single.usage.used, 167500);
   });
 
   test('uses AGY original and new content for file review', () async {
@@ -389,7 +436,9 @@ Free space 1.0M tokens (97%)''',
         'tool_id': 'edit-1',
         'tool_name': 'edit_file',
         'state': 'COMPLETED',
-        'tool_info': {'parameters': {'Path': 'README.md'}},
+        'tool_info': {
+          'parameters': {'Path': 'README.md'},
+        },
       },
     });
     await Future<void>.delayed(Duration.zero);
@@ -429,43 +478,53 @@ Free space 1.0M tokens (97%)''',
     expect((edit.original as OriginalByPatch).diff, contains('+after'));
   });
 
-  test('normalizes relative and absolute path keys for file snapshots', () async {
-    final events = <KernelEvent>[];
-    var reads = 0;
-    final translator = AgyTranslator(
-      emit: events.add,
-      nextSeq: () => events.length,
-      readFile: (_) async {
-        reads++;
-        return reads == 1 ? 'before\n' : 'after\n';
-      },
-    )..beginTurn('turn-1');
+  test(
+    'normalizes relative and absolute path keys for file snapshots',
+    () async {
+      final events = <KernelEvent>[];
+      var reads = 0;
+      final translator = AgyTranslator(
+        emit: events.add,
+        nextSeq: () => events.length,
+        readFile: (_) async {
+          reads++;
+          return reads == 1 ? 'before\n' : 'after\n';
+        },
+      )..beginTurn('turn-1');
 
-    translator.accept({
-      'event': 'step_update',
-      'step_update': {
-        'step_type': 'tool',
-        'tool_id': 'edit-1',
-        'tool_name': 'edit_file',
-        'state': 'ACTIVE',
-        'tool_info': {'parameters': {'Path': 'README.md'}},
-      },
-    });
-    translator.accept({
-      'event': 'step_update',
-      'step_update': {
-        'step_type': 'tool',
-        'tool_id': 'edit-1',
-        'tool_name': 'edit_file',
-        'state': 'COMPLETED',
-        'tool_info': {'parameters': {'Path': 'README.md'}},
-      },
-    });
-    await Future<void>.delayed(Duration.zero);
+      translator.accept({
+        'event': 'step_update',
+        'step_update': {
+          'step_type': 'tool',
+          'tool_id': 'edit-1',
+          'tool_name': 'edit_file',
+          'state': 'ACTIVE',
+          'tool_info': {
+            'parameters': {'Path': 'README.md'},
+          },
+        },
+      });
+      translator.accept({
+        'event': 'step_update',
+        'step_update': {
+          'step_type': 'tool',
+          'tool_id': 'edit-1',
+          'tool_name': 'edit_file',
+          'state': 'COMPLETED',
+          'tool_info': {
+            'parameters': {'Path': 'README.md'},
+          },
+        },
+      });
+      await Future<void>.delayed(Duration.zero);
 
-    expect(events.whereType<FileEdited>(), hasLength(1));
-    expect(events.whereType<FileEdited>().single.original, isA<OriginalByPatch>());
-  });
+      expect(events.whereType<FileEdited>(), hasLength(1));
+      expect(
+        events.whereType<FileEdited>().single.original,
+        isA<OriginalByPatch>(),
+      );
+    },
+  );
 
   test('captures the original before AGY can finish a fast edit', () async {
     final events = <KernelEvent>[];
@@ -488,7 +547,9 @@ Free space 1.0M tokens (97%)''',
         'tool_id': 'edit-1',
         'tool_name': 'edit_file',
         'state': 'ACTIVE',
-        'tool_info': {'parameters': {'Path': 'README.md'}},
+        'tool_info': {
+          'parameters': {'Path': 'README.md'},
+        },
       },
     });
     expect(captured, isTrue);
@@ -500,12 +561,17 @@ Free space 1.0M tokens (97%)''',
         'tool_id': 'edit-1',
         'tool_name': 'edit_file',
         'state': 'COMPLETED',
-        'tool_info': {'parameters': {'Path': 'README.md'}},
+        'tool_info': {
+          'parameters': {'Path': 'README.md'},
+        },
       },
     });
     await Future<void>.delayed(Duration.zero);
 
-    expect(events.whereType<FileEdited>().single.original, isA<OriginalByPatch>());
+    expect(
+      events.whereType<FileEdited>().single.original,
+      isA<OriginalByPatch>(),
+    );
   });
 
   test('emits a patch that ChangeReview can undo', () async {
