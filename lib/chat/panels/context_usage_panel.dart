@@ -85,7 +85,8 @@ class _ContextUsagePanelState extends State<ContextUsagePanel>
     final tokens = <String, int>{};
     final labels = <String, String>{};
     for (final segment in usage.segments) {
-      if (segment.kind != ContextKind.used || segment.tokens <= 0) continue;
+      if (segment.kind != ContextKind.used) continue;
+      if (segment.tokens == 0 && usage.segments.length <= 2) continue;
       final key = ContextUsagePanel.partOf(segment.label) ?? segment.label;
       tokens[key] = (tokens[key] ?? 0) + segment.tokens;
       labels[key] ??= segment.label;

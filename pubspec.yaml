@@ -50,6 +50,8 @@ dependencies:
     path: packages/bao_link
   bao_pty:
     path: packages/bao_pty
+  bao_conpty:
+    path: packages/bao_conpty
   bao_remote:
     path: packages/bao_remote
   bao_sampler:

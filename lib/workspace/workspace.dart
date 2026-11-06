@@ -162,6 +162,11 @@ class AgentThread {
 
   /// Its session's id: none for a new agent until its first message.
   String? get id => (isOpen ? session.sessionId : null) ?? record?.id;
+
+  /// The runtime that owns this conversation, used by history filters and
+  /// labels without opening the session.
+  String get kernelId => _kernel.id;
+  String get kernelLabel => _kernel.label;
   String? get _id => id;
 
   /// A new agent of this run that nothing was sent to, nor named.

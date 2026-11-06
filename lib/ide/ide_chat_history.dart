@@ -138,6 +138,33 @@ class _IdeChatHistoryState extends State<IdeChatHistory> {
   /// Archived agents listed too, in a group of their own at the end.
   bool _archived = false;
 
+  /// The runtime filter, null for all runtimes.
+  String? _kernelFilter;
+
+  List<(String, String)> get _kernelFilters {
+    final values = <String, String>{};
+    for (final thread in widget.threads) {
+      values[thread.kernelId] = thread.kernelLabel;
+    }
+    return values.entries.map((entry) => (entry.key, entry.value)).toList();
+  }
+
+  IconData _runtimeIcon(AgentThread thread) =>
+      thread.kernelId == 'antigravity'
+          ? Icons.auto_awesome_rounded
+          : Icons.code_rounded;
+
+  bool _matchesRuntime(AgentThread thread) =>
+      _kernelFilter == null || thread.kernelId == _kernelFilter;
+
+  void _setKernelFilter(String? value) {
+    setState(() {
+      _kernelFilter = value;
+      _entries = _list();
+      _selected = _agents.firstOrNull?.thread;
+    });
+  }
+
   /// The agent the arrows are on, which Enter opens.
   AgentThread? _selected;
 
@@ -203,7 +230,10 @@ class _IdeChatHistoryState extends State<IdeChatHistory> {
     final found = <_Agent>[];
     final sorted = [
       for (final thread in widget.threads)
-        if (!thread.untouched && (_archived || !thread.archived)) thread,
+        if (!thread.untouched &&
+            (_archived || !thread.archived) &&
+            _matchesRuntime(thread))
+          thread,
     ]..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
     for (final thread in sorted) {
       final title = thread.localizedTitle(l10n);
@@ -334,8 +364,11 @@ class _IdeChatHistoryState extends State<IdeChatHistory> {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(10, 10, 10, 6),
-          child: IdeInputBox(
-            controller: _query,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              IdeInputBox(
+                controller: _query,
             focusNode: _input,
             placeholder: l10n.sidebarSearchAgents,
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
@@ -352,6 +385,10 @@ class _IdeChatHistoryState extends State<IdeChatHistory> {
               ),
             ],
             togglesInset: 3,
+            // Runtime selection is kept beside the search box so the history
+            // list can be narrowed without changing the stored sessions.
+            // The filter is rendered below the input when multiple runtimes
+            // are present.
             onSubmitted: (_) {
               if (_selected case final thread?) {
                 _open(thread);
@@ -371,6 +408,28 @@ class _IdeChatHistoryState extends State<IdeChatHistory> {
               const SingleActivator(LogicalKeyboardKey.escape):
                   widget.onDismiss,
             },
+          ),
+              if (_kernelFilters.length > 1) ...[
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    const Text('Runtime:', style: TextStyle(fontSize: 11)),
+                    const SizedBox(width: 6),
+                    for (final (id, label) in _kernelFilters)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 4),
+                        child: FilterChip(
+                          label: Text(label, style: const TextStyle(fontSize: 10)),
+                          selected: _kernelFilter == id,
+                          onSelected: (selected) => _setKernelFilter(selected ? id : null),
+                          avatar: Icon(_runtimeIcon(widget.threads.firstWhere((thread) => thread.kernelId == id)), size: 13),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ],
           ),
         ),
         Flexible(
@@ -647,6 +706,16 @@ class _HistoryRowState extends State<_HistoryRow> {
                       data: IconThemeData(color: color, size: 16),
                       child: IdeThreadIcon(thread),
                     ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: Icon(
+                    widget.thread.kernelId == 'antigravity'
+                        ? Icons.auto_awesome_rounded
+                        : Icons.code_rounded,
+                    size: 11,
+                    color: muted,
                   ),
                 ),
                 const SizedBox(width: 8),
