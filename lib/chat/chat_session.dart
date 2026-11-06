@@ -230,7 +230,8 @@ class ChatSession extends ChangeNotifier implements ChatFeed {
   /// Edits reported while the asynchronous review store is opening. Their
   /// originals are required to create an inline Keep/Undo review, so they
   /// must not be dropped before [_review] becomes available.
-  final List<({FileChange change, FileOriginal? original})> _pendingReviewEdits = [];
+  final List<({FileChange change, FileOriginal? original})>
+  _pendingReviewEdits = [];
 
   /// The review, while it holds: null before it opened, or once it failed
   /// (the changes are then those the kernel reported).
@@ -721,12 +722,14 @@ class ChatSession extends ChangeNotifier implements ChatFeed {
     return switch (_transcript.activity?.kind) {
       KernelActivityKind.compacting => LiveStatusItem(
         'Compacting conversation',
+        brand: _activityBrand,
         visible: _statusVisible,
         output: output,
         startedAt: _transcript.turnStartedAt,
       ),
       _ => LiveStatusItem(
         'Planning next move',
+        brand: _activityBrand,
         whimsical: false,
         visible: _statusVisible,
         output: output,
@@ -735,6 +738,8 @@ class ChatSession extends ChangeNotifier implements ChatFeed {
       ),
     };
   }
+
+  String? get _activityBrand => kernel.id == 'antigravity' ? 'gemini' : null;
 
   /// Not while the agent waits on the user; nor after a thought under way,
   /// which says so itself; nor after its text, unless all has been quiet

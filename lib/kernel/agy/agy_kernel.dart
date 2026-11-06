@@ -379,8 +379,9 @@ final class AntigravityKernel
   ) async {
     if (!await root.exists()) return;
     await for (final entity in root.list()) {
-      if (entity is! File || p.extension(entity.path).toLowerCase() != '.md')
+      if (entity is! File || p.extension(entity.path).toLowerCase() != '.md') {
         continue;
+      }
       final text = await _readCommandFile(entity);
       if (text == null) continue;
       final name = p.basenameWithoutExtension(entity.path);
@@ -460,10 +461,12 @@ final class AntigravityKernel
   }
 
   Future<void> _ensureStarted() {
-    if (_disposed)
+    if (_disposed) {
       return Future.error(StateError('Antigravity kernel is disposed'));
-    if (_transport != null && _health.status == KernelHealthStatus.ready)
+    }
+    if (_transport != null && _health.status == KernelHealthStatus.ready) {
       return Future.value();
+    }
     return _starting ??= _launch().whenComplete(() => _starting = null);
   }
 
@@ -576,8 +579,9 @@ final class AntigravityKernel
       await _ensureStarted();
       if (_turn != turn.id) return;
       final transport = _transport;
-      if (transport == null)
+      if (transport == null) {
         throw StateError('Antigravity transport is unavailable');
+      }
       final imagePaths = await _images.save(turn.images);
       transport.write(
         AgyLaunch(cwd: _cwd).userMessage(_imagePrompt(turn.text, imagePaths)),

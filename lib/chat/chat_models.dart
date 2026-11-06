@@ -524,6 +524,7 @@ class CodeDiffItem extends ChatItem {
 class LiveStatusItem extends ChatItem {
   const LiveStatusItem(
     this.label, {
+    this.brand,
     this.whimsical = false,
     this.visible = true,
     this.output,
@@ -532,6 +533,9 @@ class LiveStatusItem extends ChatItem {
   });
 
   final String label;
+
+  /// The provider mark beside this status, when it has a branded identity.
+  final String? brand;
 
   /// Whether the wait has nothing to name (the model yet to answer, not a
   /// chore like compacting): the row may muse rather than say [label].

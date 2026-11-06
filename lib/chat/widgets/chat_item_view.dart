@@ -153,6 +153,7 @@ class ChatItemView extends StatelessWidget {
       ),
       LiveStatusItem(
         :final label,
+        :final brand,
         :final whimsical,
         :final visible,
         :final cue,
@@ -160,6 +161,7 @@ class ChatItemView extends StatelessWidget {
         RepaintBoundary(
           child: ActivityRow(
             label: label,
+            brand: brand,
             whimsical: whimsical,
             visible: visible,
             cue: cue,

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../base/step_clock.dart';
+import '../../icons/brand_logos.dart';
 import '../../l10n/l10n.dart';
 import '../../theme/app_theme.dart';
 import '../chat_models.dart';
@@ -17,9 +18,12 @@ import 'thinking_spark.dart';
 /// muses instead, a passing phrase at a time: mostly on the step just done,
 /// if [cue] says what that was, else on anything.
 class ActivityRow extends StatelessWidget {
+  static const _geminiColorLogo = 'assets/model_icons/gemini-color.webp';
+
   const ActivityRow({
     super.key,
     required this.label,
+    this.brand,
     this.whimsical = false,
     this.visible = true,
     this.cue,
@@ -27,6 +31,9 @@ class ActivityRow extends StatelessWidget {
   });
 
   final String label;
+
+  /// A colored provider logo in place of the generic thinking spark.
+  final String? brand;
   final bool whimsical;
 
   /// Whether it shows: it opens and fades in, or folds and fades out.
@@ -118,7 +125,21 @@ class ActivityRow extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const SelectionContainer.disabled(child: ThinkingSpark(size: 15)),
+            SelectionContainer.disabled(
+              child: switch (brand) {
+                'gemini' => Image.asset(
+                  _geminiColorLogo,
+                  width: 15,
+                  height: 15,
+                ),
+                final brand? => BrandLogo(
+                  brand,
+                  size: 15,
+                  color: _brandColor(brand),
+                ),
+                null => const ThinkingSpark(size: 15),
+              },
+            ),
             const SizedBox(width: 6),
             Flexible(
               child: _Musing(
@@ -139,6 +160,11 @@ class ActivityRow extends StatelessWidget {
       ),
     );
   }
+
+  static Color _brandColor(String brand) => switch (brand) {
+    'gemini' => const Color(0xff8e75f5),
+    _ => AppColors.textMuted,
+  };
 }
 
 /// [child] opening and fading in while [visible], folding and fading out

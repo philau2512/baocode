@@ -228,6 +228,7 @@ abstract final class ChatCodec {
     LiveStatusItem() => {
       't': 'live',
       'label': item.label,
+      'brand': ?item.brand,
       if (item.whimsical) 'whimsical': true,
       if (!item.visible) 'visible': false,
       // For the phone's line of figures under it, as the footer's here.
@@ -362,6 +363,7 @@ abstract final class ChatCodec {
       ),
       'live' => LiveStatusItem(
         text('label'),
+        brand: optional('brand'),
         whimsical: json['whimsical'] == true,
         visible: json['visible'] != false,
         startedAt: time('startedAt'),

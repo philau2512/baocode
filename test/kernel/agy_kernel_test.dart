@@ -40,8 +40,9 @@ void main() {
     );
     final changed = Completer<void>();
     final subscription = kernel.events.listen((event) {
-      if (event is KernelInfoChanged && !changed.isCompleted)
+      if (event is KernelInfoChanged && !changed.isCompleted) {
         changed.complete();
+      }
     });
 
     kernel.send(const KernelTurn(id: 'turn-skills', text: 'hello'));

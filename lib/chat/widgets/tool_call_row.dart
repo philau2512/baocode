@@ -92,6 +92,7 @@ class ToolCallRow extends StatelessWidget {
   };
 
   bool get _opens =>
+      kind != ToolKind.read &&
       _answered == null &&
       (results.isNotEmpty || _shown != null || images.isNotEmpty);
 
@@ -144,9 +145,7 @@ class ToolCallRow extends StatelessWidget {
     // AGY reports Windows absolute paths. Keep them even when the file index
     // has not seen the path yet; resolving through the index can otherwise
     // make a valid read/edit row non-clickable.
-    final full = _isAbsoluteWindowsPath(path)
-        ? path
-        : files?.resolve(path);
+    final full = _isAbsoluteWindowsPath(path) ? path : files?.resolve(path);
     if (full == null) return null;
     return FileOpenRequest(
       full,
@@ -185,8 +184,10 @@ class ToolCallRow extends StatelessWidget {
       onOpen: file == null ? null : () => files!.onOpen(file),
       openTooltip: file == null ? null : context.l10n.sidePanelOpenFile,
       icon: switch ((kind, path)) {
-        (ToolKind.read || ToolKind.edit, final filePath?) =>
-          FileIcon(_cleanFileLabel(filePath), size: 15),
+        (ToolKind.read || ToolKind.edit, final filePath?) => FileIcon(
+          _cleanFileLabel(filePath),
+          size: 15,
+        ),
         // A message to another agent: someone speaking, standing out.
         (ToolKind.message, _) => SvgPicture.asset(
           speakIcon,
@@ -194,7 +195,11 @@ class ToolCallRow extends StatelessWidget {
           height: 15,
           colorFilter: ColorFilter.mode(_amber, BlendMode.srcIn),
         ),
-        (ToolKind.goal, _) => Icon(Icons.flag_outlined, size: 15, color: _amber),
+        (ToolKind.goal, _) => Icon(
+          Icons.flag_outlined,
+          size: 15,
+          color: _amber,
+        ),
         (ToolKind.todo, _) => Icon(
           Icons.checklist_rounded,
           size: 15,
@@ -211,7 +216,8 @@ class ToolCallRow extends StatelessWidget {
           expanded: expanded,
           onTap: toggle,
         ),
-        (null, _, _, ToolKind.goal, final condition?, final set?) when !_running =>
+        (null, _, _, ToolKind.goal, final condition?, final set?)
+            when !_running =>
           _SetGoalButton(onTap: () => set(condition)),
         _ => null,
       },
@@ -220,10 +226,7 @@ class ToolCallRow extends StatelessWidget {
     if ((kind == ToolKind.read || kind == ToolKind.edit) && path != null) {
       header = HoverTooltip(content: _pathTooltip, child: header);
       if (file != null) {
-        header = MouseRegion(
-          cursor: SystemMouseCursors.click,
-          child: header,
-        );
+        header = MouseRegion(cursor: SystemMouseCursors.click, child: header);
       }
     }
     if (file != null) {
@@ -400,11 +403,7 @@ class _TodoList extends StatelessWidget {
 /// A search's matches (`path`, `path:line`), each opening its file where
 /// it is in the project.
 class _Results extends StatelessWidget {
-  const _Results({
-    required this.results,
-    required this.files,
-    this.pattern,
-  });
+  const _Results({required this.results, required this.files, this.pattern});
 
   final List<String> results;
   final FileOpenScope files;

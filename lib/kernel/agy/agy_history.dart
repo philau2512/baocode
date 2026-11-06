@@ -50,14 +50,21 @@ final class AgyHistory {
         ItemUpserted(
           nextSeq(),
           'agy-history-error',
-          NoticeItem(NoticeKind.error, 'Could not read Antigravity history: $error'),
+          NoticeItem(
+            NoticeKind.error,
+            'Could not read Antigravity history: $error',
+          ),
         ),
       );
     }
   }
 
   Future<void> _replayJsonl(File file) async {
-    await for (final line in file.openRead().transform(utf8.decoder).transform(const LineSplitter())) {
+    await for (final line
+        in file
+            .openRead()
+            .transform(utf8.decoder)
+            .transform(const LineSplitter())) {
       if (line.trim().isEmpty) continue;
       final raw = jsonDecode(line);
       if (raw is Map) await _emitStep(raw.cast<String, Object?>());
@@ -81,8 +88,7 @@ final class AgyHistory {
             (_applySubagentCreated(content) || _applyToolResult(content))) {
           return;
         }
-        if (type == 'PLANNER_RESPONSE' &&
-            await _applySubagentResult(content)) {
+        if (type == 'PLANNER_RESPONSE' && await _applySubagentResult(content)) {
           return;
         }
         _emitItem('assistant', content, id: step['step_index']);
@@ -150,20 +156,23 @@ final class AgyHistory {
     final prompt = _string(input['Prompt']) ?? _string(input['prompt']);
     final role = _string(input['Role']) ?? _string(input['role']) ?? 'Subagent';
     final conversation = _conversationId(output) ?? fallbackId;
-    _pendingSubagents.add(_HistorySubagent(
-      conversation,
-      prompt,
-      role,
-      _string(input['TypeName']) ?? _string(input['type_name']),
-    ));
+    _pendingSubagents.add(
+      _HistorySubagent(
+        conversation,
+        prompt,
+        role,
+        _string(input['TypeName']) ?? _string(input['type_name']),
+      ),
+    );
     // The following GENERIC record gives this invocation its conversation id;
     // the child report then arrives as a SYSTEM_MESSAGE. Hydrate there so one
     // final AgentItem contains both its transcript and result.
   }
 
-  static String? _conversationId(String? output) => RegExp(
-        r'"conversationId"\s*:\s*"([^"]+)"',
-      ).firstMatch(output ?? '')?.group(1);
+  static String? _conversationId(String? output) =>
+      RegExp(r'"conversationId"\s*:\s*"([^"]+)"')
+          .firstMatch(output ?? '')
+          ?.group(1);
 
   bool _applySubagentCreated(String content) {
     if (!_looksLikeSubagentCreation(content) || _pendingSubagents.isEmpty) {
@@ -189,38 +198,46 @@ final class AgyHistory {
     _HistorySubagent subagent,
     String result,
   ) async {
-    final transcript = await _subagentTranscript.inspect(conversation: subagent.id);
-    emit(ItemUpserted(
-      nextSeq(),
-      subagent.id,
-      AgentItem(
-        id: subagent.id,
-        description: subagent.role,
-        agentType: subagent.type,
-        prompt: transcript.prompt ?? subagent.prompt,
-        status: CommandStatus.succeeded,
-        children: transcript.items,
-        result: result,
+    final transcript = await _subagentTranscript.inspect(
+      conversation: subagent.id,
+    );
+    emit(
+      ItemUpserted(
+        nextSeq(),
+        subagent.id,
+        AgentItem(
+          id: subagent.id,
+          description: subagent.role,
+          agentType: subagent.type,
+          prompt: transcript.prompt ?? subagent.prompt,
+          status: CommandStatus.succeeded,
+          children: transcript.items,
+          result: result,
+        ),
       ),
-    ));
+    );
   }
 
   Future<bool> _applySubagentResult(String content) async {
-    final match = RegExp(r'sender=([^\s]+).*?\bcontent=(.*?)(?:\n</SYSTEM_MESSAGE>|$)', dotAll: true)
-        .firstMatch(content);
+    final match = RegExp(
+      r'sender=([^\s]+).*?\bcontent=(.*?)(?:\n</SYSTEM_MESSAGE>|$)',
+      dotAll: true,
+    ).firstMatch(content);
     if (match == null) return false;
     final id = match.group(1)!;
-    final pending = _pendingSubagents.where((agent) => agent.id == id).firstOrNull;
+    final pending = _pendingSubagents
+        .where((agent) => agent.id == id)
+        .firstOrNull;
     if (pending == null) return false;
     await _emitCompletedSubagent(pending, match.group(2)!.trim());
     return true;
   }
 
-
   ChatItem _historyItem(_HistoryTool tool, String? output) {
     if (tool.terminal) {
       return TerminalItem(
-        command: _string(tool.input['CommandLine']) ??
+        command:
+            _string(tool.input['CommandLine']) ??
             _string(tool.input['command']) ??
             tool.name,
         description: _string(tool.input['toolSummary']),
@@ -232,6 +249,7 @@ final class AgyHistory {
       kind: tool.kind,
       target: tool.mcp?.target ?? _string(tool.input['Path']) ?? tool.name,
       path: _string(tool.input['Path']) ?? _string(tool.input['path']),
+      detail: tool.kind == ToolKind.read ? _readRange(tool.input) : null,
       label: tool.mcp?.label ?? tool.name,
       tool: tool.name,
       input: tool.input,
@@ -263,15 +281,18 @@ final class AgyHistory {
   static String _toolOutput(String content) {
     const commandOutput = 'Command output:';
     final index = content.indexOf(commandOutput);
-    if (index >= 0) return content.substring(index + commandOutput.length).trim();
+    if (index >= 0)
+      return content.substring(index + commandOutput.length).trim();
     return content;
   }
 
   static String? _cleanUserContent(String? content) {
     if (content == null || content.trim().isEmpty) return null;
     final trimmed = content.trim();
-    final match = RegExp(r'<USER_REQUEST>\s*(.*?)\s*</USER_REQUEST>', dotAll: true)
-        .firstMatch(trimmed);
+    final match = RegExp(
+      r'<USER_REQUEST>\s*(.*?)\s*</USER_REQUEST>',
+      dotAll: true,
+    ).firstMatch(trimmed);
     if (match != null) return match.group(1)!.trim();
     return trimmed;
   }
@@ -281,6 +302,21 @@ final class AgyHistory {
       content.contains('<ADDITIONAL_METADATA>') ||
       content.contains('<USER_SETTINGS_CHANGE>');
 
+  static String? _readRange(Map<String, Object?> parameters) {
+    int? line(Object? value) => switch (value) {
+      int value when value > 0 => value,
+      String value => switch (int.tryParse(value)) {
+        final parsed? when parsed > 0 => parsed,
+        _ => null,
+      },
+      _ => null,
+    };
+    final start = line(parameters['StartLine'] ?? parameters['start_line']);
+    if (start == null) return null;
+    final end = line(parameters['EndLine'] ?? parameters['end_line']);
+    return end == null || end <= start ? 'L$start' : 'L$start-$end';
+  }
+
   static String? _string(Object? value) =>
       value is String && value.trim().isNotEmpty ? value.trim() : null;
 
@@ -289,9 +325,21 @@ final class AgyHistory {
 
   void _emitItem(String type, String content, {Object? id}) {
     if (type == 'user') {
-      emit(ItemUpserted(nextSeq(), '${id ?? 'user'}:history', UserMessageItem(text: content)));
+      emit(
+        ItemUpserted(
+          nextSeq(),
+          '${id ?? 'user'}:history',
+          UserMessageItem(text: content),
+        ),
+      );
     } else {
-      emit(ItemUpserted(nextSeq(), '${id ?? 'assistant'}:history', AssistantTextItem(content)));
+      emit(
+        ItemUpserted(
+          nextSeq(),
+          '${id ?? 'assistant'}:history',
+          AssistantTextItem(content),
+        ),
+      );
     }
   }
 }
