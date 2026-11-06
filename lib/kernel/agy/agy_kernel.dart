@@ -9,6 +9,7 @@ import '../agent_kernel.dart';
 import '../kernel_event.dart';
 import '../kernel_types.dart';
 import 'agy_context_inspector.dart';
+import 'agy_edit_transcript.dart';
 import 'agy_history.dart';
 import 'agy_translator.dart';
 import 'agy_transport.dart';
@@ -37,6 +38,7 @@ final class AntigravityKernel
       emit: emit,
       nextSeq: () => nextSeq,
       readFile: _readFile,
+      readEditSnapshot: _readEditSnapshot,
       onTurnEnded: (turnId) {
         if (_turn == turnId) {
           _turn = null;
@@ -77,6 +79,7 @@ final class AntigravityKernel
   final Future<AgyTransport> Function(AgyLaunch launch) _start;
   late final AgyTranslator _translator;
   late final AgyHistory _history;
+  final AgyEditTranscriptReader _editTranscript = AgyEditTranscriptReader();
   late final _ModelChoice _model;
   late final _LocalChoice _mode;
   late final _ModelSetting _effort;
@@ -216,6 +219,22 @@ final class AntigravityKernel
     } on Object {
       return null;
     }
+  }
+
+  Future<({String before, String after})?> _readEditSnapshot(String path) async {
+    final conversation = _sessionId;
+    if (conversation == null) return null;
+    for (var attempt = 0; attempt < 10; attempt++) {
+      final snapshot = await _editTranscript.read(
+        conversation: conversation,
+        path: path,
+      );
+      if (snapshot != null) {
+        return (before: snapshot.before, after: snapshot.after);
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+    return null;
   }
 
   void _setHealth(KernelHealth value) {

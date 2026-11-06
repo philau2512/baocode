@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import '../../chat/chat_models.dart';
 import '../kernel_event.dart';
@@ -11,12 +12,15 @@ final class AgyTranslator {
     required this.nextSeq,
     this.onTurnEnded,
     this.readFile,
+    this.readEditSnapshot,
   });
 
   final void Function(KernelEvent event) emit;
   final int Function() nextSeq;
   final void Function(String turnId)? onTurnEnded;
   final Future<String?> Function(String path)? readFile;
+  final Future<({String before, String after})?> Function(String path)?
+      readEditSnapshot;
   final Map<String, Future<String?>> _beforeFiles = {};
   final Map<String, String> _reportedOriginals = {};
 
@@ -91,7 +95,13 @@ final class AgyTranslator {
     _begin();
     final name = _string(step['tool_name']) ?? _string(step['name']) ?? 'tool';
     final info = _map(step['tool_info']);
-    final parameters = _map(info['parameters']);
+    final parameters = _map(info['parameters']).isNotEmpty
+        ? _map(info['parameters'])
+        : _map(step['parameters']).isNotEmpty
+        ? _map(step['parameters'])
+        : _decodeParameters(step['arguments']) ??
+            _decodeParameters(info['arguments']) ??
+            const <String, Object?>{};
     final toolKey = _string(step['tool_id']) ??
         _string(step['id']) ??
         _string(info['tool_id']) ??
@@ -154,6 +164,11 @@ final class AgyTranslator {
     if (fileKey != null && !_beforeFiles.containsKey(fileKey)) {
       _beforeFiles[fileKey] = _captureBefore(path!);
     }
+    final kind = switch (name.toLowerCase()) {
+      'read_file' || 'readfile' => ToolKind.read,
+      _ when path != null => ToolKind.edit,
+      _ => ToolKind.other,
+    };
     final item = command != null
         ? TerminalItem(
             command: command,
@@ -164,7 +179,7 @@ final class AgyTranslator {
             startedAt: _tools[id],
           )
         : ToolCallItem(
-            kind: path != null ? ToolKind.edit : ToolKind.other,
+            kind: kind,
             target: path ?? name,
             path: path,
             label: name,
@@ -177,12 +192,34 @@ final class AgyTranslator {
     _tools.putIfAbsent(id, DateTime.now);
     emit(ItemUpserted(nextSeq(), id, item));
     if (done) _tools.remove(id);
-    if (path != null && done) {
-      unawaited(_reportFile(path, turnId: turnId, itemId: id));
+    if (path != null && done && kind == ToolKind.edit) {
+      unawaited(_reportFile(
+        path,
+        turnId: turnId,
+        itemId: id,
+        before: original,
+        after: newContent,
+      ));
     }
   }
 
-  Future<String?> _captureBefore(String path) async => readFile?.call(path);
+  /// Start the disk read synchronously while AGY's edit tool is ACTIVE.
+  /// Declaring this `async` defers invoking [readFile] to a microtask, which
+  /// lets a fast AGY edit overwrite the file before its original is captured.
+  Future<String?> _captureBefore(String path) =>
+      readFile?.call(path) ?? Future<String?>.value();
+
+  static Map<String, Object?>? _decodeParameters(Object? value) {
+    if (value is Map) return value.cast<String, Object?>();
+    if (value is! String || value.trim().isEmpty) return null;
+    try {
+      final decoded = jsonDecode(value);
+      return decoded is Map ? decoded.cast<String, Object?>() : null;
+    } on FormatException {
+      return null;
+    }
+  }
+
 
   static String _pathKey(String path) => path.replaceAll('\\', '/').toLowerCase();
 
@@ -190,11 +227,18 @@ final class AgyTranslator {
     String path, {
     String? turnId,
     required String itemId,
+    String? before,
+    String? after,
   }) async {
     final key = _pathKey(path);
-    final before = _reportedOriginals[key] ??
+    if (before == null || after == null) {
+      final snapshot = await readEditSnapshot?.call(path);
+      before ??= snapshot?.before;
+      after ??= snapshot?.after;
+    }
+    before ??= _reportedOriginals[key] ??
         await _beforeFiles[key]?.catchError((_) => null);
-    final after = _reportedOriginals['$key:after'] ?? await readFile?.call(path);
+    after ??= _reportedOriginals['$key:after'] ?? await readFile?.call(path);
     if (after == null && before == null) return;
     if (after == before) return;
     final diff = _unifiedDiff(before, after);

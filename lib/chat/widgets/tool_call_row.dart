@@ -5,6 +5,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../l10n/l10n.dart';
 import '../../theme/app_theme.dart';
+import '../../theme/material_file_icons.dart';
 import '../../theme/workbench_theme.dart' show themeColors;
 import '../chat_models.dart';
 import '../floating/hover_tooltip.dart';
@@ -77,6 +78,14 @@ class ToolCallRow extends StatelessWidget {
 
   bool get _running => status == ToolStatus.running;
 
+  static String _cleanFileLabel(String path) {
+    final hash = path.indexOf('#');
+    return hash < 0 ? path : path.substring(0, hash);
+  }
+
+  @visibleForTesting
+  static String cleanFileLabelForTest(String path) => _cleanFileLabel(path);
+
   String? get _shown => switch (output?.trimRight()) {
     final text? when text.isNotEmpty => text,
     _ => null,
@@ -125,9 +134,14 @@ class ToolCallRow extends StatelessWidget {
   /// [FileOpenScope]) and it is in the project.
   FileOpenRequest? _file(FileOpenScope? files) {
     final path = this.path;
-    if (files == null || path == null) return null;
+    if (path == null) return null;
     if (kind != ToolKind.read && kind != ToolKind.edit) return null;
-    final full = files.resolve(path);
+    // AGY reports Windows absolute paths. Keep them even when the file index
+    // has not seen the path yet; resolving through the index can otherwise
+    // make a valid read/edit row non-clickable.
+    final full = _isAbsoluteWindowsPath(path)
+        ? path
+        : files?.resolve(path);
     if (full == null) return null;
     return FileOpenRequest(
       full,
@@ -135,6 +149,13 @@ class ToolCallRow extends StatelessWidget {
       diff: kind == ToolKind.edit,
     );
   }
+
+  static bool _isAbsoluteWindowsPath(String path) =>
+      RegExp(r'^[A-Za-z]:[/\\]').hasMatch(path);
+
+  @visibleForTesting
+  static bool isAbsoluteWindowsPathForTest(String path) =>
+      _isAbsoluteWindowsPath(path);
 
   @override
   Widget build(BuildContext context) {
@@ -152,19 +173,24 @@ class ToolCallRow extends StatelessWidget {
       detail: todo?.detail ?? detail,
       running: _running,
       expanded: expanded,
-      onToggle: _opens ? onToggle : null,
+      // A read/edit row's primary click opens its file. Previously its output
+      // (e.g. "11 lines, 784 bytes") made it toggle instead, which prevents
+      // StepHeader from invoking onOpen.
+      onToggle: file == null && _opens ? onToggle : null,
       onOpen: file == null ? null : () => files!.onOpen(file),
       openTooltip: file == null ? null : context.l10n.sidePanelOpenFile,
-      icon: switch (kind) {
+      icon: switch ((kind, path)) {
+        (ToolKind.read || ToolKind.edit, final filePath?) =>
+          FileIcon(_cleanFileLabel(filePath), size: 15),
         // A message to another agent: someone speaking, standing out.
-        ToolKind.message => SvgPicture.asset(
+        (ToolKind.message, _) => SvgPicture.asset(
           speakIcon,
           width: 15,
           height: 15,
           colorFilter: ColorFilter.mode(_amber, BlendMode.srcIn),
         ),
-        ToolKind.goal => Icon(Icons.flag_outlined, size: 15, color: _amber),
-        ToolKind.todo => Icon(
+        (ToolKind.goal, _) => Icon(Icons.flag_outlined, size: 15, color: _amber),
+        (ToolKind.todo, _) => Icon(
           Icons.checklist_rounded,
           size: 15,
           color: AppColors.textMuted,
@@ -175,8 +201,12 @@ class ToolCallRow extends StatelessWidget {
       trailing: images.isEmpty || status == ToolStatus.failed
           ? null
           : StepThumbnails(images: _images, shown: !expanded),
-      action: switch ((kind, _shown, onSetGoal)) {
-        (ToolKind.goal, final condition?, final set?) when !_running =>
+      action: switch ((file, _opens, onToggle, kind, _shown, onSetGoal)) {
+        (_?, true, final toggle?, _, _, _) => _OutputToggle(
+          expanded: expanded,
+          onTap: toggle,
+        ),
+        (null, _, _, ToolKind.goal, final condition?, final set?) when !_running =>
           _SetGoalButton(onTap: () => set(condition)),
         _ => null,
       },
@@ -184,6 +214,12 @@ class ToolCallRow extends StatelessWidget {
     // A file read or edit shows only its name: the whole path on hover.
     if ((kind == ToolKind.read || kind == ToolKind.edit) && path != null) {
       header = HoverTooltip(content: _pathTooltip, child: header);
+      if (file != null) {
+        header = MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: header,
+        );
+      }
     }
     if (file != null) {
       header = FileLinkMenuRegion(
@@ -529,6 +565,34 @@ String toolVerb(
 }
 
 /// Sets a proposed goal; once it has, says so.
+class _OutputToggle extends StatelessWidget {
+  const _OutputToggle({required this.expanded, required this.onTap});
+
+  final bool expanded;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => MouseRegion(
+    cursor: SystemMouseCursors.click,
+    child: GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.all(2),
+        child: AnimatedRotation(
+          turns: expanded ? 0.25 : 0,
+          duration: const Duration(milliseconds: 150),
+          child: Icon(
+            Icons.chevron_right_rounded,
+            size: 16,
+            color: AppColors.textMuted,
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
 class _SetGoalButton extends StatefulWidget {
   const _SetGoalButton({required this.onTap});
 

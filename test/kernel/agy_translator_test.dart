@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:baocode/chat/chat_models.dart';
@@ -45,6 +47,29 @@ void main() {
     expect((items[0].item as ToolCallItem).status, ToolStatus.running);
     expect((items[1].item as ToolCallItem).status, ToolStatus.succeeded);
     expect((items[1].item as ToolCallItem).output, 'done');
+  });
+
+  test('classifies AGY read_file as a file read', () {
+    final events = <KernelEvent>[];
+    final translator = AgyTranslator(
+      emit: events.add,
+      nextSeq: () => events.length,
+    )..beginTurn('turn-1');
+
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_id': 'read-1',
+        'tool_name': 'read_file',
+        'state': 'COMPLETED',
+        'tool_info': {'parameters': {'Path': r'C:\\PROJECTS\\baocode\\README.md'}},
+      },
+    });
+
+    final item = events.whereType<ItemUpserted>().single.item as ToolCallItem;
+    expect(item.kind, ToolKind.read);
+    expect(item.path, r'C:\\PROJECTS\\baocode\\README.md');
   });
 
   test('parses context report text from AGY result response', () {
@@ -144,6 +169,63 @@ Free space 1.0M tokens (97%)''',
     expect((edit.original as OriginalByPatch).diff, contains('+after'));
   });
 
+  test('keeps AGY edit payload while the turn ends', () async {
+    final events = <KernelEvent>[];
+    final translator = AgyTranslator(
+      emit: events.add,
+      nextSeq: () => events.length,
+    )..beginTurn('turn-1');
+
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_id': 'edit-1',
+        'tool_name': 'edit_file',
+        'state': 'COMPLETED',
+        'tool_info': {
+          'parameters': {
+            'Path': 'README.md',
+            'Target': 'before\n',
+            'Replacement': 'after\n',
+          },
+        },
+      },
+    });
+    translator.accept({
+      'event': 'result',
+      'result': {'status': 'SUCCESS'},
+    });
+    await Future<void>.delayed(Duration.zero);
+
+    final edit = events.whereType<FileEdited>().single;
+    expect(edit.original, isA<OriginalByPatch>());
+  });
+
+  test('uses persisted AGY edit snapshot for file review', () async {
+    final events = <KernelEvent>[];
+    final translator = AgyTranslator(
+      emit: events.add,
+      nextSeq: () => events.length,
+      readEditSnapshot: (_) async => (before: 'before\n', after: 'after\n'),
+    )..beginTurn('turn-1');
+
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_id': 'edit-1',
+        'tool_name': 'edit_file',
+        'state': 'COMPLETED',
+        'tool_info': {'parameters': {'Path': 'README.md'}},
+      },
+    });
+    await Future<void>.delayed(Duration.zero);
+
+    final edit = events.whereType<FileEdited>().single;
+    expect(edit.original, isA<OriginalByPatch>());
+  });
+
   test('uses AGY edit target and replacement for file review', () async {
     final events = <KernelEvent>[];
     final translator = AgyTranslator(
@@ -210,6 +292,47 @@ Free space 1.0M tokens (97%)''',
     await Future<void>.delayed(Duration.zero);
 
     expect(events.whereType<FileEdited>(), hasLength(1));
+    expect(events.whereType<FileEdited>().single.original, isA<OriginalByPatch>());
+  });
+
+  test('captures the original before AGY can finish a fast edit', () async {
+    final events = <KernelEvent>[];
+    final original = Completer<String?>();
+    var captured = false;
+    var reads = 0;
+    final translator = AgyTranslator(
+      emit: events.add,
+      nextSeq: () => events.length,
+      readFile: (_) {
+        captured = true;
+        return ++reads == 1 ? original.future : Future.value('after\n');
+      },
+    )..beginTurn('turn-1');
+
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_id': 'edit-1',
+        'tool_name': 'edit_file',
+        'state': 'ACTIVE',
+        'tool_info': {'parameters': {'Path': 'README.md'}},
+      },
+    });
+    expect(captured, isTrue);
+    original.complete('before\n');
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_id': 'edit-1',
+        'tool_name': 'edit_file',
+        'state': 'COMPLETED',
+        'tool_info': {'parameters': {'Path': 'README.md'}},
+      },
+    });
+    await Future<void>.delayed(Duration.zero);
+
     expect(events.whereType<FileEdited>().single.original, isA<OriginalByPatch>());
   });
 
