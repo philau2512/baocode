@@ -11,7 +11,13 @@ import '../kernel_types.dart';
 import 'agy_context_inspector.dart';
 import 'agy_edit_transcript.dart';
 import 'agy_history.dart';
+import 'agy_subagent_transcript.dart';
 import 'agy_translator.dart';
+import 'agy_subagent_tasks.dart';
+import 'agy_task_control.dart';
+
+// AGY currently exposes task controls as agent tools rather than a separate
+// stream-json command channel.
 import 'agy_transport.dart';
 import 'process_transport.dart';
 
@@ -27,7 +33,8 @@ final class AntigravityKernel
         ReportsUsage,
         ProvidesCommands,
         LoadsHistory,
-        ConfirmsModelSwitch {
+        ConfirmsModelSwitch,
+        RunsBackgroundTasks {
   AntigravityKernel(
     this.descriptor,
     this._context, {
@@ -39,6 +46,9 @@ final class AntigravityKernel
       nextSeq: () => nextSeq,
       readFile: _readFile,
       readEditSnapshot: _readEditSnapshot,
+      readSubagentItems: (conversation) =>
+          _subagentTranscript.read(conversation: conversation),
+      onTasksChanged: (tasks) => emit(TasksReported(nextSeq, tasks)),
       onTurnEnded: (turnId) {
         if (_turn == turnId) {
           _turn = null;
@@ -80,6 +90,17 @@ final class AntigravityKernel
   late final AgyTranslator _translator;
   late final AgyHistory _history;
   final AgyEditTranscriptReader _editTranscript = AgyEditTranscriptReader();
+  final AgySubagentTranscriptReader _subagentTranscript =
+      AgySubagentTranscriptReader();
+  final AgySubagentTaskReader _subagentTasks = AgySubagentTaskReader();
+  AgyTaskControl? _taskControl;
+
+  Future<void> _refreshSubagentTasks() async {
+    final conversation = _sessionId;
+    if (conversation == null) return;
+    final tasks = await _subagentTasks.read(conversation: conversation);
+    if (tasks.isNotEmpty) emit(TasksReported(nextSeq, tasks));
+  }
   late final _ModelChoice _model;
   late final _LocalChoice _mode;
   late final _ModelSetting _effort;
@@ -271,6 +292,7 @@ final class AntigravityKernel
       );
       final transport = await _start(launch);
       _transport = transport;
+      _taskControl = AgyTaskControl(transport, cwd: _cwd);
       _stopped = transport.exited.whenComplete(() {
         if (identical(_transport, transport)) {
           _transport = null;
@@ -292,6 +314,7 @@ final class AntigravityKernel
     final event = message['event'];
     if (event == 'init') {
       _sessionId = message['conversation_id'] as String?;
+      unawaited(_refreshSubagentTasks());
       _setHealth(KernelHealth.ready);
     }
     _translator.accept(message);
@@ -337,6 +360,12 @@ final class AntigravityKernel
       }
     }
   }
+
+  @override
+  void stopTask(String taskId) => _taskControl?.cancel(taskId);
+
+  @override
+  void moveToBackground(String toolUseId) => _taskControl?.background(toolUseId);
 
   @override
   void answer(String requestId, InteractionAnswer answer) {}

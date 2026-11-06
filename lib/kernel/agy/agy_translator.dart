@@ -13,6 +13,8 @@ final class AgyTranslator {
     this.onTurnEnded,
     this.readFile,
     this.readEditSnapshot,
+    this.readSubagentItems,
+    this.onTasksChanged,
   });
 
   final void Function(KernelEvent event) emit;
@@ -21,8 +23,15 @@ final class AgyTranslator {
   final Future<String?> Function(String path)? readFile;
   final Future<({String before, String after})?> Function(String path)?
       readEditSnapshot;
+  final Future<List<ChatItem>> Function(String conversation)? readSubagentItems;
+  final void Function(List<KernelTask> tasks)? onTasksChanged;
   final Map<String, Future<String?>> _beforeFiles = {};
   final Map<String, String> _reportedOriginals = {};
+  final Map<String, AgentItem> _agents = {};
+  final Map<String, String> _agentIdsByTool = {};
+  final Map<String, List<ChatItem>> _agentChildren = {};
+  final Map<String, String> _agentParents = {};
+  final Map<String, KernelTask> _tasks = {};
 
   String? conversationId;
   String? turnId;
@@ -95,6 +104,9 @@ final class AgyTranslator {
     _begin();
     final name = _string(step['tool_name']) ?? _string(step['name']) ?? 'tool';
     final info = _map(step['tool_info']);
+    final subagentInfo = _map(step['subagent_info']).isNotEmpty
+        ? _map(step['subagent_info'])
+        : _map(info['subagent_info']);
     final parameters = _map(info['parameters']).isNotEmpty
         ? _map(info['parameters'])
         : _map(step['parameters']).isNotEmpty
@@ -106,7 +118,7 @@ final class AgyTranslator {
         _string(step['id']) ??
         _string(info['tool_id']) ??
         _string(info['id']) ??
-        '$name:${parameters.toString()}';
+        '$name:${_string(step['step_index']) ?? parameters.toString()}';
     final id = _toolIds.putIfAbsent(
       toolKey,
       () => '$turnId:tool:${_toolIds.length}',
@@ -154,6 +166,12 @@ final class AgyTranslator {
         _string(parameters['replacement']);
     final command = _string(parameters['CommandLine']) ?? _string(parameters['command']);
     final path = _string(parameters['Path']) ?? _string(parameters['path']);
+    final isAgent = _isAgentTool(name);
+    final agentId = _agentId(step, subagentInfo.isEmpty ? info : subagentInfo, parameters) ?? id;
+    final parentAgent = _parentAgentId(step, info, parameters);
+    if (parentAgent case final parent?) {
+      _agentParents[agentId] = parent;
+    }
     final fileKey = path == null ? null : _pathKey(path);
     if (path != null && original != null) {
       _reportedOriginals[fileKey!] = original;
@@ -169,6 +187,20 @@ final class AgyTranslator {
       _ when path != null => ToolKind.edit,
       _ => ToolKind.other,
     };
+    if (isAgent) {
+      _agentIdsByTool[id] = agentId;
+      _reportAgent(
+        agentId,
+        name: name,
+        parameters: parameters,
+        info: subagentInfo.isEmpty ? info : subagentInfo,
+        output: output,
+        state: state,
+        startedAt: _tools[id],
+        parentId: parentAgent,
+      );
+      return;
+    }
     final item = command != null
         ? TerminalItem(
             command: command,
@@ -192,6 +224,9 @@ final class AgyTranslator {
     _tools.putIfAbsent(id, DateTime.now);
     emit(ItemUpserted(nextSeq(), id, item));
     if (done) _tools.remove(id);
+    if (_agentIdsByTool[id] case final finishedAgent?) {
+      _updateParent(finishedAgent);
+    }
     if (path != null && done && kind == ToolKind.edit) {
       unawaited(_reportFile(
         path,
@@ -222,6 +257,127 @@ final class AgyTranslator {
 
 
   static String _pathKey(String path) => path.replaceAll('\\', '/').toLowerCase();
+
+  static bool _isAgentTool(String name) => const {
+    'invoke_subagent',
+    'browser_subagent',
+  }.contains(name.toLowerCase());
+
+  static String? _agentId(
+    Map<String, Object?> step,
+    Map<String, Object?> info,
+    Map<String, Object?> parameters,
+  ) => _string(step['subagent_id']) ??
+      _string(step['conversation_id']) ??
+      _string(info['subagent_id']) ??
+      _string(info['conversation_id']) ??
+      _string(parameters['conversationId']) ??
+      _string(parameters['conversation_id']) ??
+      _string(parameters['ConversationId']);
+
+  static String? _parentAgentId(
+    Map<String, Object?> step,
+    Map<String, Object?> info,
+    Map<String, Object?> parameters,
+  ) => _string(step['parent_subagent_id']) ??
+      _string(info['parent_subagent_id']) ??
+      _string(parameters['parent_subagent_id']);
+
+  void _reportAgent(
+    String agentId, {
+    required String name,
+    required Map<String, Object?> parameters,
+    required Map<String, Object?> info,
+    required String? output,
+    required String state,
+    required DateTime? startedAt,
+    required String? parentId,
+  }) {
+    final existing = _agents[agentId];
+    final prompt = _string(
+      parameters['Prompt'] ?? parameters['prompt'] ?? parameters['initial_prompt'],
+    );
+    final description = _string(parameters['Role'] ?? parameters['role']) ??
+        _string(parameters['description']) ?? name;
+    final item = existing ?? AgentItem(
+      description: description,
+      id: agentId,
+      agentType: _string(parameters['TypeName'] ?? parameters['type_name']),
+      prompt: prompt,
+      status: CommandStatus.running,
+      startedAt: startedAt,
+    );
+    final children = _agentChildren[agentId] ?? const <ChatItem>[];
+    _agents[agentId] = item.copyWith(
+      description: description,
+      prompt: prompt,
+      status: _agentStatus(state),
+      result: output,
+      children: children,
+    );
+    if (parentId case final parent? when parent != agentId) {
+      _agentParents[agentId] = parent;
+      final parentItem = _agents[parent];
+      if (parentItem != null) {
+        _reportAgentChild(parent, agentId, _agents[agentId]!);
+        return;
+      }
+    }
+    emit(ItemUpserted(nextSeq(), agentId, _agents[agentId]!));
+    _tasks[agentId] = KernelTask(
+      id: agentId,
+      description: description,
+      kind: KernelTaskKind.agent,
+      status: _agentStatus(state),
+      startedAt: startedAt ?? DateTime.now(),
+      toolUseId: agentId,
+      background: false,
+      summary: output,
+    );
+    onTasksChanged?.call([..._tasks.values]);
+    if (readSubagentItems != null && existing == null) {
+      unawaited(_loadAgentItems(agentId));
+    }
+  }
+
+  Future<void> _loadAgentItems(String agentId) async {
+    final items = await readSubagentItems?.call(agentId);
+    if (items == null || items.isEmpty) return;
+    final agent = _agents[agentId];
+    if (agent == null) return;
+    _agentChildren[agentId] = items;
+    _agents[agentId] = agent.copyWith(children: items);
+    emit(ItemUpserted(nextSeq(), agentId, _agents[agentId]!));
+  }
+
+  void _reportAgentChild(String agentId, String childId, ChatItem child) {
+    final children = [...?_agentChildren[agentId]];
+    final index = children.indexWhere((item) => item is AgentItem && item.id == childId);
+    if (index >= 0) {
+      children[index] = child;
+    } else {
+      children.add(child);
+    }
+    _agentChildren[agentId] = children;
+    final agent = _agents[agentId];
+    if (agent == null) return;
+    _agents[agentId] = agent.copyWith(children: children);
+    emit(ItemUpserted(nextSeq(), agentId, _agents[agentId]!));
+  }
+
+  void _updateParent(String agentId) {
+    final parent = _agentParents[agentId];
+    if (parent == null) return;
+    final child = _agents[agentId];
+    if (child != null) _reportAgentChild(parent, agentId, child);
+  }
+
+  static CommandStatus _agentStatus(String state) => switch (state) {
+    'DONE' || 'COMPLETED' || 'SUCCESS' || 'SUCCEEDED' =>
+      CommandStatus.succeeded,
+    'ERROR' || 'FAILED' || 'CANCELLED' || 'CANCELED' => CommandStatus.failed,
+    _ => CommandStatus.running,
+  };
 
   Future<void> _reportFile(
     String path, {

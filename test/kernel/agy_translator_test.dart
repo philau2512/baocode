@@ -72,6 +72,47 @@ void main() {
     expect(item.path, r'C:\\PROJECTS\\baocode\\README.md');
   });
 
+  test('maps invoke_subagent to an AgentItem', () {
+    final events = <KernelEvent>[];
+    final translator = AgyTranslator(
+      emit: events.add,
+      nextSeq: () => events.length,
+    )..beginTurn('turn-1');
+
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_id': 'invoke-1',
+        'tool_name': 'invoke_subagent',
+        'state': 'DONE',
+        'tool_info': {
+          'parameters': {
+            'Role': 'File Inspector',
+            'TypeName': 'research',
+            'Prompt': 'Inspect test_edit.md',
+          },
+          'subagent_info': {
+            'conversation_id': 'subagent-1',
+          },
+          'output': '12 lines',
+        },
+      },
+    });
+
+    final agent = events
+        .whereType<ItemUpserted>()
+        .map((event) => event.item)
+        .whereType<AgentItem>()
+        .single;
+    expect(agent.id, 'subagent-1');
+    expect(agent.description, 'File Inspector');
+    expect(agent.agentType, 'research');
+    expect(agent.prompt, 'Inspect test_edit.md');
+    expect(agent.status, CommandStatus.succeeded);
+    expect(agent.result, '12 lines');
+  });
+
   test('parses context report text from AGY result response', () {
     final events = <KernelEvent>[];
     final translator = AgyTranslator(
