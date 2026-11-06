@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:baocode/chat/chat_models.dart';
 import 'package:baocode/kernel/agy/agy_translator.dart';
+import 'package:baocode/kernel/agy/agy_subagent_transcript.dart';
 import 'package:baocode/kernel/kernel_event.dart';
 import 'package:baocode/kernel/kernel_types.dart';
 
@@ -72,6 +73,42 @@ void main() {
     expect(item.path, r'C:\\PROJECTS\\baocode\\README.md');
   });
 
+  test('uses subagent prompt and role from tool info when parameters are normalized there', () {
+    final events = <KernelEvent>[];
+    final translator = AgyTranslator(
+      emit: events.add,
+      nextSeq: () => events.length,
+    )..beginTurn('turn-1');
+
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_id': 'invoke-1',
+        'tool_name': 'invoke_subagent',
+        'state': 'DONE',
+        'tool_info': {
+          'parameters': {'conversation_id': 'subagent-1'},
+          'subagent_info': {
+            'conversation_id': 'subagent-1',
+            'Role': 'File Inspector',
+            'TypeName': 'research',
+            'Prompt': 'Inspect test_edit.md',
+          },
+        },
+      },
+    });
+
+    final agent = events
+        .whereType<ItemUpserted>()
+        .map((event) => event.item)
+        .whereType<AgentItem>()
+        .single;
+    expect(agent.description, 'File Inspector');
+    expect(agent.prompt, 'Inspect test_edit.md');
+    expect(agent.agentType, 'research');
+  });
+
   test('maps invoke_subagent to an AgentItem', () {
     final events = <KernelEvent>[];
     final translator = AgyTranslator(
@@ -111,6 +148,100 @@ void main() {
     expect(agent.prompt, 'Inspect test_edit.md');
     expect(agent.status, CommandStatus.succeeded);
     expect(agent.result, '12 lines');
+  });
+
+  test('uses completed child transcript to update a subagent view', () async {
+    final events = <KernelEvent>[];
+    final translator = AgyTranslator(
+      emit: events.add,
+      nextSeq: () => events.length,
+      readSubagentTranscript: (_) async => const AgySubagentTranscript(
+        prompt: 'Inspect pubspec.yaml',
+        completed: true,
+        items: [AssistantTextItem('Package: baocode')],
+      ),
+    )..beginTurn('turn-1');
+
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_id': 'invoke-1',
+        'tool_name': 'invoke_subagent',
+        'state': 'ACTIVE',
+        'tool_info': {
+          'parameters': {'conversation_id': 'subagent-1'},
+          'subagent_info': {'conversation_id': 'subagent-1'},
+        },
+      },
+    });
+    await Future<void>.delayed(Duration.zero);
+
+    final agent = events
+        .whereType<ItemUpserted>()
+        .map((event) => event.item)
+        .whereType<AgentItem>()
+        .last;
+    expect(agent.prompt, 'Inspect pubspec.yaml');
+    expect(agent.children, [isA<AssistantTextItem>()]);
+    expect(agent.status, CommandStatus.succeeded);
+  });
+
+  test('shows the concrete MCP tool name from AGY arguments', () {
+    final events = <KernelEvent>[];
+    final translator = AgyTranslator(
+      emit: events.add,
+      nextSeq: () => events.length,
+    )..beginTurn('turn-1');
+
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_id': 'mcp-1',
+        'tool_name': 'call_mcp_tool',
+        'state': 'COMPLETED',
+        'tool_info': {
+          'parameters': {
+            'ServerName': '"context7"',
+            'ToolName': '"resolve-library-id"',
+            'Arguments': '{}',
+          },
+        },
+      },
+    });
+
+    final item = events.whereType<ItemUpserted>().single.item as ToolCallItem;
+    expect(item.kind, ToolKind.mcp);
+    expect(item.label, 'MCP · context7 · resolve-library-id');
+    expect(item.target, 'resolve-library-id');
+  });
+
+  test('emits clickable search results and images from AGY output', () {
+    final events = <KernelEvent>[];
+    final translator = AgyTranslator(
+      emit: events.add,
+      nextSeq: () => events.length,
+    )..beginTurn('turn-1');
+
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_id': 'search-1',
+        'tool_name': 'grep_search',
+        'state': 'COMPLETED',
+        'tool_info': {
+          'parameters': {'pattern': 'AGY'},
+          'output': 'lib/main.dart:42: AGY\ndata:image/png;base64,AA==',
+        },
+      },
+    });
+
+    final item = events.whereType<ItemUpserted>().single.item as ToolCallItem;
+    expect(item.kind, ToolKind.grep);
+    expect(item.results, ['lib/main.dart:42: AGY']);
+    expect(item.images, hasLength(1));
   });
 
   test('parses context report text from AGY result response', () {

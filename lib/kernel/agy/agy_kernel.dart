@@ -11,10 +11,10 @@ import '../kernel_types.dart';
 import 'agy_context_inspector.dart';
 import 'agy_edit_transcript.dart';
 import 'agy_history.dart';
+import 'agy_image_store.dart';
 import 'agy_subagent_transcript.dart';
 import 'agy_translator.dart';
 import 'agy_subagent_tasks.dart';
-import 'agy_task_control.dart';
 
 // AGY currently exposes task controls as agent tools rather than a separate
 // stream-json command channel.
@@ -34,7 +34,7 @@ final class AntigravityKernel
         ProvidesCommands,
         LoadsHistory,
         ConfirmsModelSwitch,
-        RunsBackgroundTasks {
+        AcceptsImages {
   AntigravityKernel(
     this.descriptor,
     this._context, {
@@ -46,9 +46,10 @@ final class AntigravityKernel
       nextSeq: () => nextSeq,
       readFile: _readFile,
       readEditSnapshot: _readEditSnapshot,
-      readSubagentItems: (conversation) =>
-          _subagentTranscript.read(conversation: conversation),
+      readSubagentTranscript: (conversation) =>
+          _subagentTranscript.inspect(conversation: conversation),
       onTasksChanged: (tasks) => emit(TasksReported(nextSeq, tasks)),
+      sendInteractionAnswer: _sendInteractionAnswer,
       onTurnEnded: (turnId) {
         if (_turn == turnId) {
           _turn = null;
@@ -93,7 +94,7 @@ final class AntigravityKernel
   final AgySubagentTranscriptReader _subagentTranscript =
       AgySubagentTranscriptReader();
   final AgySubagentTaskReader _subagentTasks = AgySubagentTaskReader();
-  AgyTaskControl? _taskControl;
+  final AgyImageStore _images = AgyImageStore();
 
   Future<void> _refreshSubagentTasks() async {
     final conversation = _sessionId;
@@ -292,7 +293,6 @@ final class AntigravityKernel
       );
       final transport = await _start(launch);
       _transport = transport;
-      _taskControl = AgyTaskControl(transport, cwd: _cwd);
       _stopped = transport.exited.whenComplete(() {
         if (identical(_transport, transport)) {
           _transport = null;
@@ -351,7 +351,10 @@ final class AntigravityKernel
       if (_turn != turn.id) return;
       final transport = _transport;
       if (transport == null) throw StateError('Antigravity transport is unavailable');
-      transport.write(AgyLaunch(cwd: _cwd).userMessage(turn.text));
+      final imagePaths = await _images.save(turn.images);
+      transport.write(AgyLaunch(cwd: _cwd).userMessage(
+        _imagePrompt(turn.text, imagePaths),
+      ));
     } on Object catch (error) {
       _setHealth(KernelHealth(KernelHealthStatus.failed, message: 'Antigravity turn failed', detail: '$error'));
       if (_turn == turn.id) {
@@ -361,14 +364,34 @@ final class AntigravityKernel
     }
   }
 
-  @override
-  void stopTask(String taskId) => _taskControl?.cancel(taskId);
+  static String _imagePrompt(String text, List<String> imagePaths) {
+    if (imagePaths.isEmpty) return text;
+    final images = imagePaths.indexed
+        .map((entry) => '${entry.$1 + 1}. ${entry.$2}')
+        .join('\n');
+    return '''$text
+
+The user attached ${imagePaths.length} image(s). Read each image with read_file before answering, in this order:
+$images''';
+  }
+
+  void _sendInteractionAnswer(String requestId, InteractionAnswer answer) {
+    final transport = _transport;
+    if (transport == null) return;
+    final value = switch (answer) {
+      QuestionAnswer(:final summary) => summary,
+      ApprovalAnswer(decision: final decision, :final message) =>
+        '${decision.name}${message == null ? '' : ': $message'}',
+    };
+    transport.write(AgyLaunch(cwd: _cwd).userMessage(
+      'Answer interaction $requestId: $value',
+    ));
+  }
 
   @override
-  void moveToBackground(String toolUseId) => _taskControl?.background(toolUseId);
-
-  @override
-  void answer(String requestId, InteractionAnswer answer) {}
+  void answer(String requestId, InteractionAnswer answer) {
+    _translator.answer(requestId, answer);
+  }
 
   @override
   void cancel() {
@@ -402,6 +425,7 @@ final class AntigravityKernel
     _turn = null;
     unawaited(_subscription?.cancel() ?? Future.value());
     _transport?.close();
+    unawaited(_images.dispose());
     closeEvents();
   }
 }

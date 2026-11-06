@@ -95,6 +95,11 @@ class ToolCallRow extends StatelessWidget {
       _answered == null &&
       (results.isNotEmpty || _shown != null || images.isNotEmpty);
 
+  /// MCP output can contain `path:line` fragments too, but unlike grep it is
+  /// structured tool output and must remain complete when the row expands.
+  bool get _showsSearchResults =>
+      (kind == ToolKind.grep || kind == ToolKind.search) && results.isNotEmpty;
+
   /// The questions asked and what the user answered, once they have
   /// (AskUserQuestion): shown under it as they are, not folded in what it
   /// returned.
@@ -241,7 +246,7 @@ class ToolCallRow extends StatelessWidget {
           StepBody(child: _TodoList(todos: todos))
         else if (expanded && (results.isNotEmpty || _shown != null))
           StepBody(
-            child: results.isNotEmpty && files != null
+            child: _showsSearchResults && files != null
                 ? _Results(
                     results: results,
                     files: files,
@@ -249,10 +254,7 @@ class ToolCallRow extends StatelessWidget {
                         ? input['pattern'] as String
                         : null,
                   )
-                : Text(
-                    results.isNotEmpty ? results.join('\n') : _shown!,
-                    style: stepMono,
-                  ),
+                : Text(_shown ?? results.join('\n'), style: stepMono),
           ),
         if (expanded && images.isNotEmpty) ToolImages(images: _images),
       ],

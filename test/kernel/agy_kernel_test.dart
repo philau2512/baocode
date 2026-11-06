@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:baocode/chat/chat_models.dart';
 import 'package:baocode/kernel/agent_kernel.dart';
 import 'package:baocode/kernel/agy/agy_kernel.dart';
 import 'package:baocode/kernel/agy/agy_transport.dart';
@@ -26,6 +29,41 @@ void main() {
     );
     await kernel.refreshUsage();
     expect(transport.writes, isEmpty);
+    kernel.dispose();
+  });
+
+  test('persists multiple pasted images and sends their paths to AGY', () async {
+    final transport = _FakeAgyTransport();
+    final descriptor = KernelDescriptor(
+      id: 'antigravity-test',
+      label: 'Antigravity',
+      icon: Icons.auto_awesome,
+      description: 'test',
+      create: (_) => throw UnimplementedError(),
+    );
+    final kernel = AntigravityKernel(
+      descriptor,
+      const KernelContext(cwd: '.'),
+      start: (_) async => transport,
+    );
+    kernel.send(KernelTurn(
+      id: 'turn-images',
+      text: 'Describe these screenshots.',
+      images: [
+        ImageAttachment(bytes: Uint8List.fromList([1]), mediaType: 'image/png'),
+        ImageAttachment(bytes: Uint8List.fromList([2]), mediaType: 'image/jpeg'),
+      ],
+    ));
+    await Future<void>.delayed(const Duration(milliseconds: 25));
+
+    expect(transport.writes, hasLength(1));
+    final content = transport.writes.single['message'] as Map<String, Object?>;
+    final text = content['content'] as String;
+    final paths = RegExp(r'\d+\. (.+)').allMatches(text).map((match) => match[1]!).toList();
+    expect(kernel, isA<AcceptsImages>());
+    expect(paths, hasLength(2));
+    expect(await File(paths[0]).readAsBytes(), [1]);
+    expect(await File(paths[1]).readAsBytes(), [2]);
     kernel.dispose();
   });
 
