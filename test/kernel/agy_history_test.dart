@@ -51,6 +51,62 @@ void main() {
     expect(tool.output, contains('"React"'));
   });
 
+  test('keeps persisted edit results with their tool rows', () async {
+    final dir = await Directory.systemTemp.createTemp('agy-history-edit');
+    addTearDown(() => dir.delete(recursive: true));
+    final file = File('${dir.path}\\transcript.jsonl');
+    await file.writeAsString(
+      [
+        jsonEncode({
+          'step_index': 0,
+          'type': 'PLANNER_RESPONSE',
+          'tool_calls': [
+            {
+              'id': 'edit-1',
+              'name': 'edit_file',
+              'args': {'Path': 'lib/main.dart'},
+            },
+          ],
+        }),
+        jsonEncode({
+          'step_index': 1,
+          'type': 'GENERIC',
+          'content':
+              'Made 1 replacement in C:\\PROJECTS\\baocode\\lib\\main.dart.',
+        }),
+        jsonEncode({
+          'step_index': 2,
+          'type': 'PLANNER_RESPONSE',
+          'content': 'Finished the edit.',
+        }),
+      ].join('\n'),
+    );
+
+    final events = <KernelEvent>[];
+    await AgyHistory(emit: events.add, nextSeq: () => events.length).replay(
+      SessionRecord(
+        id: 'history-edit',
+        title: 'history',
+        updatedAt: DateTime.now(),
+        cwd: dir.path,
+        path: file.path,
+      ),
+    );
+
+    final itemsById = <String, ChatItem>{
+      for (final event in events.whereType<ItemUpserted>())
+        event.id: event.item,
+    };
+    expect(
+      itemsById.values.whereType<AssistantTextItem>().single.text,
+      'Finished the edit.',
+    );
+    expect(
+      (itemsById['edit-1'] as ToolCallItem).output,
+      contains('Made 1 replacement'),
+    );
+  });
+
   test('restores AGY read ranges from persisted tool arguments', () async {
     final dir = await Directory.systemTemp.createTemp('agy-history-range');
     addTearDown(() => dir.delete(recursive: true));

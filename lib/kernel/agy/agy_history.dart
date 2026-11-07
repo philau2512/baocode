@@ -274,6 +274,12 @@ final class AgyHistory {
   static bool _looksLikeToolResult(String content) =>
       content.startsWith('Created At:') ||
       content.startsWith('Showing lines ') ||
+      RegExp(
+        r'^Made \d+ replacement',
+        caseSensitive: false,
+      ).hasMatch(content) ||
+      content.startsWith('Wrote ') ||
+      content.startsWith('Deleted ') ||
       content.startsWith('Encountered error in step execution:') ||
       content.startsWith('[') ||
       content.startsWith('{');
@@ -281,8 +287,9 @@ final class AgyHistory {
   static String _toolOutput(String content) {
     const commandOutput = 'Command output:';
     final index = content.indexOf(commandOutput);
-    if (index >= 0)
+    if (index >= 0) {
       return content.substring(index + commandOutput.length).trim();
+    }
     return content;
   }
 

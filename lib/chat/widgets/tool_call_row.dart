@@ -99,7 +99,10 @@ class ToolCallRow extends StatelessWidget {
   /// MCP output can contain `path:line` fragments too, but unlike grep it is
   /// structured tool output and must remain complete when the row expands.
   bool get _showsSearchResults =>
-      (kind == ToolKind.grep || kind == ToolKind.search) && results.isNotEmpty;
+      (kind == ToolKind.grep ||
+          kind == ToolKind.search ||
+          kind == ToolKind.web) &&
+      results.isNotEmpty;
 
   /// The questions asked and what the user answered, once they have
   /// (AskUserQuestion): shown under it as they are, not folded in what it

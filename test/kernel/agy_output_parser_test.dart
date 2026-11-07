@@ -7,10 +7,17 @@ void main() {
     expect(parsed.results, ['lib/main.dart:42: match']);
   });
 
-  test('extracts inline base64 image', () {
+  test('extracts numbered web search results', () {
     final parsed = AgyOutputParser.parse(
-      'data:image/png;base64,AA==',
+      '[1] Flutter keyboard issue https://github.com/flutter/flutter/issues/123',
     );
+    expect(parsed.results, [
+      '[1] Flutter keyboard issue https://github.com/flutter/flutter/issues/123',
+    ]);
+  });
+
+  test('extracts inline base64 image', () {
+    final parsed = AgyOutputParser.parse('data:image/png;base64,AA==');
     expect(parsed.images, hasLength(1));
     expect(parsed.images.single.mediaType, 'image/png');
   });

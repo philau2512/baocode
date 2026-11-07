@@ -272,7 +272,9 @@ final class AgyTranslator {
           )
         : ToolCallItem(
             kind: kind,
-            target: mcp?.target ?? path ?? name,
+            target: kind == ToolKind.web
+                ? _string(parameters['query']) ?? name
+                : mcp?.target ?? path ?? name,
             path: path,
             results: parsedOutput.results,
             detail: kind == ToolKind.read ? readRange ?? progress : progress,

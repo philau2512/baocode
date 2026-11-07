@@ -15,8 +15,13 @@ final class AgyOutputParser {
     if (text == null || text.isEmpty) return const AgyParsedOutput();
     final results = <String>[];
     for (final line in text.split(RegExp(r'\r?\n'))) {
-      if (RegExp(r'^[^\s].*[:(]\d+(?:[-:]\d+)?').hasMatch(line.trim())) {
-        results.add(line.trim());
+      final trimmed = line.trim();
+      if (RegExp(r'^[^\s].*[:(]\d+(?:[-:]\d+)?').hasMatch(trimmed) ||
+          RegExp(
+            r'^\[\d+\]\s+.+https?://',
+            caseSensitive: false,
+          ).hasMatch(trimmed)) {
+        results.add(trimmed);
       }
     }
     final images = <ImageAttachment>[];
@@ -26,10 +31,12 @@ final class AgyOutputParser {
     );
     for (final match in pattern.allMatches(text)) {
       try {
-        images.add(ImageAttachment(
-          bytes: base64Decode(match.group(2)!.replaceAll(RegExp(r'\s+'), '')),
-          mediaType: match.group(1)!,
-        ));
+        images.add(
+          ImageAttachment(
+            bytes: base64Decode(match.group(2)!.replaceAll(RegExp(r'\s+'), '')),
+            mediaType: match.group(1)!,
+          ),
+        );
       } on FormatException {
         // Ignore malformed image payloads.
       }

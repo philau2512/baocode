@@ -11,7 +11,12 @@ final class AgyToolDescriptor {
 final class AgyToolClassifier {
   static AgyToolDescriptor classify(String name, Map<String, Object?> input) {
     final lower = name.toLowerCase();
-    if (_any(lower, const {'read_file', 'readfile', 'view_file', 'open_file'})) {
+    if (_any(lower, const {
+      'read_file',
+      'readfile',
+      'view_file',
+      'open_file',
+    })) {
       return const AgyToolDescriptor(kind: ToolKind.read);
     }
     if (_any(lower, const {
@@ -24,12 +29,7 @@ final class AgyToolClassifier {
     })) {
       return const AgyToolDescriptor(kind: ToolKind.edit);
     }
-    if (_any(lower, const {
-      'grep_search',
-      'grep',
-      'rg',
-      'search_files',
-    })) {
+    if (_any(lower, const {'grep_search', 'grep', 'rg', 'search_files'})) {
       return const AgyToolDescriptor(kind: ToolKind.grep);
     }
     if (_any(lower, const {'find_by_name', 'glob', 'search', 'search_files'})) {
@@ -47,14 +47,16 @@ final class AgyToolClassifier {
     })) {
       return const AgyToolDescriptor(kind: ToolKind.command, terminal: true);
     }
-    if (_any(lower, const {
-      'generate_image',
-      'capture_browser_screenshot',
-    })) {
+    if (_any(lower, const {'search_web', 'read_url_content', 'read_url'})) {
+      return const AgyToolDescriptor(kind: ToolKind.web);
+    }
+    if (_any(lower, const {'generate_image', 'capture_browser_screenshot'})) {
       return const AgyToolDescriptor(kind: ToolKind.image);
     }
-    if (lower.startsWith('browser_') || lower.startsWith('capture_browser_') ||
-        lower.startsWith('click_browser_') || lower == 'execute_browser_javascript') {
+    if (lower.startsWith('browser_') ||
+        lower.startsWith('capture_browser_') ||
+        lower.startsWith('click_browser_') ||
+        lower == 'execute_browser_javascript') {
       return const AgyToolDescriptor(kind: ToolKind.browser);
     }
     if (_any(lower, const {'call_mcp_tool', 'mcp_tool'})) {
