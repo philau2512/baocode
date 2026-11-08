@@ -251,13 +251,18 @@ final class AgyHistory {
       tool.input,
       output: output,
     );
+    final path = _string(tool.input['Path']) ?? _string(tool.input['path']);
+    final isFilePath = path != null &&
+        (tool.kind == ToolKind.read ||
+            tool.kind == ToolKind.edit ||
+            tool.kind == ToolKind.listDir);
     return ToolCallItem(
       kind: tool.kind,
       target: task?.target ??
           tool.mcp?.target ??
-          _string(tool.input['Path']) ??
+          (isFilePath ? _baseName(path) : path) ??
           tool.name,
-      path: _string(tool.input['Path']) ?? _string(tool.input['path']),
+      path: path,
       detail: task?.detail ??
           (tool.kind == ToolKind.read ? _readRange(tool.input) : null),
       label: task?.label ?? tool.mcp?.label ?? tool.name,
@@ -334,6 +339,13 @@ final class AgyHistory {
     if (start == null) return null;
     final end = line(parameters['EndLine'] ?? parameters['end_line']);
     return end == null || end <= start ? 'L$start' : 'L$start-$end';
+  }
+
+  static String _baseName(String path) {
+    if (path.isEmpty) return path;
+    final clean = path.replaceAll('\\', '/').replaceAll(RegExp(r'/+$'), '');
+    final slash = clean.lastIndexOf('/');
+    return slash >= 0 ? clean.substring(slash + 1) : clean;
   }
 
   static String? _string(Object? value) =>

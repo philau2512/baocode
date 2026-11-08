@@ -274,6 +274,14 @@ final class AgyTranslator {
       output: output,
       running: !done && !failed,
     );
+    final isFilePath = path != null &&
+        (kind == ToolKind.read ||
+            kind == ToolKind.edit ||
+            kind == ToolKind.listDir);
+    final target = taskPresentation?.target ??
+        (kind == ToolKind.web
+            ? _string(parameters['query']) ?? name
+            : mcp?.target ?? (isFilePath ? _baseName(path!) : path) ?? name);
     final item = command != null
         ? TerminalItem(
             command: command,
@@ -288,10 +296,7 @@ final class AgyTranslator {
           )
         : ToolCallItem(
             kind: kind,
-            target: taskPresentation?.target ??
-                (kind == ToolKind.web
-                    ? _string(parameters['query']) ?? name
-                    : mcp?.target ?? path ?? name),
+            target: target,
             path: path,
             results: parsedOutput.results,
             detail: taskPresentation?.detail ??
@@ -357,6 +362,13 @@ final class AgyTranslator {
     if (start == null) return null;
     final end = line(parameters['EndLine'] ?? parameters['end_line']);
     return end == null || end <= start ? 'L$start' : 'L$start-$end';
+  }
+
+  static String _baseName(String path) {
+    if (path.isEmpty) return path;
+    final clean = path.replaceAll('\\', '/').replaceAll(RegExp(r'/+$'), '');
+    final slash = clean.lastIndexOf('/');
+    return slash >= 0 ? clean.substring(slash + 1) : clean;
   }
 
   static String _pathKey(String path) =>

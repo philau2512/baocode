@@ -134,12 +134,19 @@ final class AgySubagentTranscriptReader {
       final parsed = AgyOutputParser.parse(output);
       final path = _string(args['Path']) ?? _string(args['path']);
       final isMessage = descriptor.kind == ToolKind.message;
+      final isFilePath = path != null &&
+          (descriptor.kind == ToolKind.read ||
+              descriptor.kind == ToolKind.edit ||
+              descriptor.kind == ToolKind.listDir);
       final task = AgyTaskPresentation.parse(name, args, output: output);
       items[id] = ToolCallItem(
         kind: descriptor.kind,
         target: isMessage
             ? 'parent agent'
-            : task?.target ?? mcp?.target ?? path ?? name,
+            : task?.target ??
+                mcp?.target ??
+                (isFilePath ? _baseName(path) : path) ??
+                name,
         path: path,
         detail: task?.detail,
         label: isMessage ? 'Sent message' : task?.label ?? mcp?.label,
@@ -183,6 +190,13 @@ final class AgySubagentTranscriptReader {
         status: ToolStatus.succeeded,
       );
     }
+  }
+
+  static String _baseName(String path) {
+    if (path.isEmpty) return path;
+    final clean = path.replaceAll('\\', '/').replaceAll(RegExp(r'/+$'), '');
+    final slash = clean.lastIndexOf('/');
+    return slash >= 0 ? clean.substring(slash + 1) : clean;
   }
 
   static String _toolOutput(String content) {

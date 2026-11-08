@@ -79,6 +79,7 @@ void main() {
 
     final item = events.whereType<ItemUpserted>().single.item as ToolCallItem;
     expect(item.kind, ToolKind.read);
+    expect(item.target, 'README.md');
     expect(item.path, r'C:\\PROJECTS\\baocode\\README.md');
     expect(item.detail, 'L10-15');
   });
