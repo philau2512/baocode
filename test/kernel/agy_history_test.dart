@@ -187,4 +187,77 @@ void main() {
         .map((item) => item.text);
     expect(texts, ['First response.']);
   });
+
+  test('restores AGY schedule and manage_task tool calls from transcript', () async {
+    final dir = await Directory.systemTemp.createTemp('agy-history-task-tools');
+    addTearDown(() => dir.delete(recursive: true));
+    final file = File('${dir.path}\\transcript.jsonl');
+    await file.writeAsString([
+      jsonEncode({
+        'step_index': 0,
+        'type': 'PLANNER_RESPONSE',
+        'tool_calls': [
+          {
+            'id': 'schedule-1',
+            'name': 'schedule',
+            'args': {
+              'DurationSeconds': '8',
+              'Prompt': '"Check if gradle test finished"',
+            },
+          },
+        ],
+      }),
+      jsonEncode({
+        'step_index': 1,
+        'type': 'GENERIC',
+        'content':
+            'Created At: now\nTool is running as a background task with task id: 79377b35/task-160',
+      }),
+      jsonEncode({
+        'step_index': 2,
+        'type': 'PLANNER_RESPONSE',
+        'tool_calls': [
+          {
+            'id': 'manage-1',
+            'name': 'manage_task',
+            'args': {
+              'Action': '"status"',
+              'TaskId': '"79377b35-b41c-4ba4-a64b-7a3c6e60f70b/task-154"',
+            },
+          },
+        ],
+      }),
+      jsonEncode({
+        'step_index': 3,
+        'type': 'GENERIC',
+        'content':
+            'Created At: now\nTask: 79377b35/task-154\nStatus: RUNNING\nLog: file:///task.log',
+      }),
+    ].join('\n'));
+
+    final events = <KernelEvent>[];
+    await AgyHistory(emit: events.add, nextSeq: () => events.length).replay(
+      SessionRecord(
+        id: 'history-task-tools',
+        title: 'history',
+        updatedAt: DateTime.now(),
+        cwd: dir.path,
+        path: file.path,
+      ),
+    );
+
+    final itemsById = <String, ChatItem>{
+      for (final event in events.whereType<ItemUpserted>())
+        event.id: event.item,
+    };
+    final schedule = itemsById['schedule-1'] as ToolCallItem;
+    expect(schedule.label, 'Scheduled timer');
+    expect(schedule.target, 'Check if gradle test finished');
+    expect(schedule.detail, '8s');
+
+    final manage = itemsById['manage-1'] as ToolCallItem;
+    expect(manage.label, 'Checked task');
+    expect(manage.target, 'task-154');
+    expect(manage.detail, 'running');
+  });
 }

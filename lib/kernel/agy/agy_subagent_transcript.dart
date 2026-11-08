@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import '../../chat/chat_models.dart';
 import 'agy_mcp_plugin.dart';
 import 'agy_output_parser.dart';
+import 'agy_task_presentation.dart';
 import 'agy_tool_classifier.dart';
 
 /// Reconstructs the visible child activity of an AGY subagent from its
@@ -133,11 +134,16 @@ final class AgySubagentTranscriptReader {
       final parsed = AgyOutputParser.parse(output);
       final path = _string(args['Path']) ?? _string(args['path']);
       final isMessage = descriptor.kind == ToolKind.message;
+      final task = AgyTaskPresentation.parse(name, args, output: output);
       items[id] = ToolCallItem(
         kind: descriptor.kind,
-        target: isMessage ? 'parent agent' : mcp?.target ?? path ?? name,
+        target: isMessage
+            ? 'parent agent'
+            : task?.target ?? mcp?.target ?? path ?? name,
         path: path,
-        label: isMessage ? 'Sent message' : mcp?.label,
+        detail: task?.detail,
+        label: isMessage ? 'Sent message' : task?.label ?? mcp?.label,
+        tool: name,
         input: args,
         output: output,
         results: parsed.results,

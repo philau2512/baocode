@@ -8,6 +8,7 @@ import 'agy_interactions.dart';
 import 'agy_mcp_plugin.dart';
 import 'agy_output_parser.dart';
 import 'agy_subagent_transcript.dart';
+import 'agy_task_presentation.dart';
 import 'agy_tool_classifier.dart';
 
 // MCP/plugin metadata is presentation-only; mutating plugin actions still
@@ -258,6 +259,12 @@ final class AgyTranslator {
     final mcp = kind == ToolKind.mcp || _isPluginTool(name)
         ? AgyMcpPluginParser.parse(name, parameters)
         : null;
+    final taskPresentation = AgyTaskPresentation.parse(
+      name,
+      parameters,
+      output: output,
+      running: !done && !failed,
+    );
     final item = command != null
         ? TerminalItem(
             command: command,
@@ -272,13 +279,16 @@ final class AgyTranslator {
           )
         : ToolCallItem(
             kind: kind,
-            target: kind == ToolKind.web
-                ? _string(parameters['query']) ?? name
-                : mcp?.target ?? path ?? name,
+            target: taskPresentation?.target ??
+                (kind == ToolKind.web
+                    ? _string(parameters['query']) ?? name
+                    : mcp?.target ?? path ?? name),
             path: path,
             results: parsedOutput.results,
-            detail: kind == ToolKind.read ? readRange ?? progress : progress,
-            label: mcp?.label ?? name,
+            detail: taskPresentation?.detail ??
+                (kind == ToolKind.read ? readRange ?? progress : progress),
+            label: taskPresentation?.label ?? mcp?.label ?? name,
+            tool: name,
             input: parameters,
             output: output,
             images: parsedOutput.images,

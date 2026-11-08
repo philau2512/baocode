@@ -208,7 +208,19 @@ class ToolCallRow extends StatelessWidget {
           size: 15,
           color: AppColors.textMuted,
         ),
-        _ => null,
+        _ => switch (tool?.toLowerCase()) {
+          'schedule' => Icon(
+            Icons.schedule_rounded,
+            size: 15,
+            color: AppColors.textMuted,
+          ),
+          'manage_task' || 'manage_subagents' => Icon(
+            Icons.task_alt_rounded,
+            size: 15,
+            color: AppColors.textMuted,
+          ),
+          _ => null,
+        },
       },
       trailingGap: 0,
       trailing: images.isEmpty || status == ToolStatus.failed

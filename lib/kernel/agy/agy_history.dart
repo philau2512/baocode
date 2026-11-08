@@ -8,6 +8,7 @@ import '../kernel_event.dart';
 import 'agy_mcp_plugin.dart';
 import 'agy_output_parser.dart';
 import 'agy_subagent_transcript.dart';
+import 'agy_task_presentation.dart';
 import 'agy_tool_classifier.dart';
 
 /// Replays AGY's persisted records without exposing its internal envelope.
@@ -245,12 +246,21 @@ final class AgyHistory {
       );
     }
     final parsed = AgyOutputParser.parse(output);
+    final task = AgyTaskPresentation.parse(
+      tool.name,
+      tool.input,
+      output: output,
+    );
     return ToolCallItem(
       kind: tool.kind,
-      target: tool.mcp?.target ?? _string(tool.input['Path']) ?? tool.name,
+      target: task?.target ??
+          tool.mcp?.target ??
+          _string(tool.input['Path']) ??
+          tool.name,
       path: _string(tool.input['Path']) ?? _string(tool.input['path']),
-      detail: tool.kind == ToolKind.read ? _readRange(tool.input) : null,
-      label: tool.mcp?.label ?? tool.name,
+      detail: task?.detail ??
+          (tool.kind == ToolKind.read ? _readRange(tool.input) : null),
+      label: task?.label ?? tool.mcp?.label ?? tool.name,
       tool: tool.name,
       input: tool.input,
       output: output,
@@ -274,6 +284,8 @@ final class AgyHistory {
   static bool _looksLikeToolResult(String content) =>
       content.startsWith('Created At:') ||
       content.startsWith('Showing lines ') ||
+      content.startsWith('Task:') ||
+      content.startsWith('Tool is running as a background task') ||
       RegExp(
         r'^Made \d+ replacement',
         caseSensitive: false,
