@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:baocode/chat/chat_models.dart';
+import 'package:baocode/chat/review/change_review.dart';
+import 'package:baocode/chat/review/review_store_io.dart';
 import 'package:baocode/kernel/agy/agy_translator.dart';
 import 'package:baocode/kernel/agy/agy_subagent_transcript.dart';
 import 'package:baocode/kernel/kernel_event.dart';
@@ -603,5 +606,99 @@ Free space 1.0M tokens (97%)''',
     final edit = events.whereType<FileEdited>().single;
     expect(edit.original, isA<OriginalByPatch>());
     expect(edit.original, isNotNull);
+  });
+
+  test('notifies edit watch callbacks before and after tool edit', () async {
+    final beforeCalls = <String>[];
+    final afterCalls = <String>[];
+    final events = <KernelEvent>[];
+    final translator = AgyTranslator(
+      emit: events.add,
+      nextSeq: () => events.length,
+      beforeEdit: (path) async => beforeCalls.add(path),
+      afterEdit: (path) async => afterCalls.add(path),
+    )..beginTurn('turn-1');
+
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_id': 'edit-1',
+        'tool_name': 'edit_file',
+        'state': 'ACTIVE',
+        'tool_info': {
+          'parameters': {'Path': 'popup.js', 'Target': 'old', 'Replacement': 'new'},
+        },
+      },
+    });
+    await Future<void>.delayed(Duration.zero);
+    expect(beforeCalls, ['popup.js']);
+    expect(afterCalls, isEmpty);
+
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_id': 'edit-1',
+        'tool_name': 'edit_file',
+        'state': 'COMPLETED',
+        'tool_info': {
+          'parameters': {'Path': 'popup.js', 'Target': 'old', 'Replacement': 'new'},
+        },
+      },
+    });
+    await Future<void>.delayed(Duration.zero);
+    expect(afterCalls, ['popup.js']);
+  });
+
+  test('ChangeReview tracks and undoes AGY CRLF file edits', () async {
+    final tempDir = Directory.systemTemp.createTempSync('agy_review_test');
+    addTearDown(() => tempDir.deleteSync(recursive: true));
+    final file = File('${tempDir.path}\\popup.js');
+    file.writeAsStringSync('line1\r\nold code\r\nline3\r\n');
+
+    final review = ChangeReview(
+      BlobReviewStore.open('${tempDir.path}\\store'),
+      root: tempDir.path,
+    );
+
+    final events = <KernelEvent>[];
+    final translator = AgyTranslator(
+      emit: events.add,
+      nextSeq: () => events.length,
+      readFile: (path) async => file.readAsString(),
+    )..beginTurn('turn-1');
+
+    // Simulate AGY edit changing 'old code' to 'new code'
+    file.writeAsStringSync('line1\r\nnew code\r\nline3\r\n');
+
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_id': 'edit-1',
+        'tool_name': 'edit_file',
+        'state': 'COMPLETED',
+        'tool_info': {
+          'parameters': {
+            'Path': file.path,
+            'Target': 'old code',
+            'Replacement': 'new code',
+          },
+        },
+      },
+    });
+    await Future<void>.delayed(Duration.zero);
+
+    final edit = events.whereType<FileEdited>().single;
+    review.report(edit.change, original: edit.original);
+    await review.look();
+
+    expect(review.changes, hasLength(1));
+    expect(review.changes.single.tracked, isTrue);
+    expect(review.baseOf(file.path), isNotNull);
+
+    await review.undoAll();
+    expect(file.readAsStringSync(), 'line1\r\nold code\r\nline3\r\n');
   });
 }

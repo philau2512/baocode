@@ -20,6 +20,8 @@ final class AgyTranslator {
     required this.emit,
     required this.nextSeq,
     this.onTurnEnded,
+    this.beforeEdit,
+    this.afterEdit,
     this.readFile,
     this.readEditSnapshot,
     this.readSubagentTranscript,
@@ -33,6 +35,8 @@ final class AgyTranslator {
   final void Function(KernelEvent event) emit;
   final int Function() nextSeq;
   final void Function(String turnId)? onTurnEnded;
+  final Future<void>? Function(String path)? beforeEdit;
+  final Future<void>? Function(String path)? afterEdit;
   final Future<String?> Function(String path)? readFile;
   final Future<({String before, String after})?> Function(String path)?
   readEditSnapshot;
@@ -208,7 +212,9 @@ final class AgyTranslator {
         _string(step['newContent']) ??
         _string(step['new_content']) ??
         _string(parameters['Replacement']) ??
-        _string(parameters['replacement']);
+        _string(parameters['replacement']) ??
+        _string(parameters['Content']) ??
+        _string(parameters['content']);
     final command =
         _string(parameters['CommandLine']) ?? _string(parameters['command']);
     final path = _string(parameters['Path']) ?? _string(parameters['path']);
@@ -236,6 +242,9 @@ final class AgyTranslator {
       _beforeFiles[fileKey] = _captureBefore(path!);
     }
     final kind = AgyToolClassifier.classify(name, parameters).kind;
+    if (path != null && kind == ToolKind.edit && !done) {
+      unawaited(beforeEdit?.call(path));
+    }
     final isTaskTool = _isTaskTool(name);
     final taskId = _taskId(parameters, output) ?? id;
     if (isTaskTool) {
@@ -305,6 +314,7 @@ final class AgyTranslator {
       _updateParent(finishedAgent);
     }
     if (path != null && done && kind == ToolKind.edit) {
+      unawaited(afterEdit?.call(path));
       unawaited(
         _reportFile(
           path,
@@ -597,11 +607,13 @@ final class AgyTranslator {
         _reportedOriginals[key] ??
         await _beforeFiles[key]?.catchError((_) => null);
     after ??= _reportedOriginals['$key:after'] ?? await readFile?.call(path);
-    if (after == null && before == null) return;
-    if (after == before) return;
-    final diff = _unifiedDiff(before, after);
-    final oldLines = (before ?? '').split('\n');
-    final newLines = (after ?? '').split('\n');
+    final cleanBefore = before?.replaceAll('\r\n', '\n');
+    final cleanAfter = after?.replaceAll('\r\n', '\n');
+    if (cleanAfter == null && cleanBefore == null) return;
+    if (cleanAfter == cleanBefore) return;
+    final diff = _unifiedDiff(cleanBefore, cleanAfter);
+    final oldLines = (cleanBefore ?? '').split('\n');
+    final newLines = (cleanAfter ?? '').split('\n');
     final diffLines = <DiffLine>[];
     final common = oldLines.length < newLines.length
         ? oldLines.length
@@ -655,8 +667,10 @@ final class AgyTranslator {
   }
 
   static String _unifiedDiff(String? before, String? after) {
-    final oldLines = (before ?? '').split('\n');
-    final newLines = (after ?? '').split('\n');
+    final cleanBefore = before?.replaceAll('\r\n', '\n');
+    final cleanAfter = after?.replaceAll('\r\n', '\n');
+    final oldLines = (cleanBefore ?? '').split('\n');
+    final newLines = (cleanAfter ?? '').split('\n');
     final lines = <String>[
       '--- a/file',
       '+++ b/file',

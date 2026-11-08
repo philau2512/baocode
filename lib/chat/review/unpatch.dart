@@ -2,6 +2,10 @@
 /// the text before the edit; null when the diff does not fit it (changed
 /// again since).
 String? unpatch(String after, String diff) {
+  final isCrlf = after.contains('\r\n');
+  final cleanAfter = isCrlf ? after.replaceAll('\r\n', '\n') : after;
+  final cleanDiff = diff.replaceAll('\r\n', '\n');
+
   final header = RegExp(r'^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@');
   final hunks = <({int start, List<String> before, List<String> after})>[];
   List<String>? oldSide;
@@ -10,9 +14,9 @@ String? unpatch(String after, String diff) {
   var oldOpen = false;
   var newOpen = false;
   String? last;
-  final diffLines = diff.split('\n');
+  final diffLines = cleanDiff.split('\n');
   // The newline that ends the diff starts no line.
-  if (diff.endsWith('\n')) diffLines.removeLast();
+  if (cleanDiff.endsWith('\n')) diffLines.removeLast();
   for (var line in diffLines) {
     if (header.firstMatch(line) case final match?) {
       oldSide = [];
@@ -49,8 +53,8 @@ String? unpatch(String after, String diff) {
   }
   if (hunks.isEmpty) return null;
 
-  final lines = after.isEmpty ? <String>[] : after.split('\n');
-  final closed = after.endsWith('\n');
+  final lines = cleanAfter.isEmpty ? <String>[] : cleanAfter.split('\n');
+  final closed = cleanAfter.endsWith('\n');
   if (closed) lines.removeLast();
   // From the last, so that the lines of those before stay where they are.
   for (final hunk in hunks.reversed) {
@@ -61,7 +65,8 @@ String? unpatch(String after, String diff) {
   if (lines.isEmpty) return '';
   // As the text after, unless the edit touched its end.
   final ends = !oldOpen && (newOpen || closed);
-  return '${lines.join('\n')}${ends ? '\n' : ''}';
+  final unpatched = '${lines.join('\n')}${ends ? '\n' : ''}';
+  return isCrlf ? unpatched.replaceAll('\n', '\r\n') : unpatched;
 }
 
 /// Where [block] is in [lines], the nearest to [expected]; null where it

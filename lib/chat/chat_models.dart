@@ -713,13 +713,21 @@ final class OriginalByEdits extends FileOriginal {
   /// The text before them, from [text] as they left it; null where it
   /// cannot be told.
   String? undo(String text) {
+    final isCrlf = text.contains('\r\n');
+    var normalized = isCrlf ? text.replaceAll('\r\n', '\n') : text;
     for (final edit in edits.reversed) {
       if (edit.after.isEmpty) return null;
-      final at = text.indexOf(edit.after);
-      if (at < 0 || text.indexOf(edit.after, at + 1) >= 0) return null;
-      text = text.replaceRange(at, at + edit.after.length, edit.before);
+      final normAfter = edit.after.replaceAll('\r\n', '\n');
+      final normBefore = edit.before.replaceAll('\r\n', '\n');
+      final at = normalized.indexOf(normAfter);
+      if (at < 0 || normalized.indexOf(normAfter, at + 1) >= 0) return null;
+      normalized = normalized.replaceRange(
+        at,
+        at + normAfter.length,
+        normBefore,
+      );
     }
-    return text;
+    return isCrlf ? normalized.replaceAll('\n', '\r\n') : normalized;
   }
 }
 
