@@ -229,11 +229,8 @@ class FileMentions {
     ranked.sort((a, b) {
       final byScore = b.score.compareTo(a.score);
       if (byScore != 0) return byScore;
-      // Folders first, as a listing shows them.
-      if (a.entry.isDirectory != b.entry.isDirectory) {
-        return a.entry.isDirectory ? -1 : 1;
-      }
-      return a.entry.name.toLowerCase().compareTo(b.entry.name.toLowerCase());
+      // Folders first, as a listing shows them, then by natural sort.
+      return ideCompareFiles(a.entry, b.entry);
     });
     // Where it is as typed (`~/Documents`), its trailing separator off.
     final shown = query.substring(0, query.length - prefix.length);

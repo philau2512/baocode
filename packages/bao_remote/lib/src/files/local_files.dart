@@ -80,10 +80,7 @@ class LocalFiles {
       }
       files.add(IdeFile(entry.path, name, isDirectory: isDirectory));
     }
-    files.sort((a, b) {
-      if (a.isDirectory != b.isDirectory) return a.isDirectory ? -1 : 1;
-      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-    });
+    files.sort(ideCompareFiles);
     return files;
   }
 

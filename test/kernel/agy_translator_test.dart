@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:path/path.dart' as p;
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:baocode/chat/chat_models.dart';
@@ -384,7 +386,7 @@ Free space 1.0M tokens (97%)''',
         },
       },
     });
-    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(const Duration(milliseconds: 10));
 
     final edit = events.whereType<FileEdited>().single;
     expect(edit.original, isA<OriginalByPatch>());
@@ -419,7 +421,7 @@ Free space 1.0M tokens (97%)''',
       'event': 'result',
       'result': {'status': 'SUCCESS'},
     });
-    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(const Duration(milliseconds: 10));
 
     final edit = events.whereType<FileEdited>().single;
     expect(edit.original, isA<OriginalByPatch>());
@@ -445,7 +447,7 @@ Free space 1.0M tokens (97%)''',
         },
       },
     });
-    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(const Duration(milliseconds: 10));
 
     final edit = events.whereType<FileEdited>().single;
     expect(edit.original, isA<OriginalByPatch>());
@@ -474,7 +476,7 @@ Free space 1.0M tokens (97%)''',
         },
       },
     });
-    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(const Duration(milliseconds: 10));
 
     final edit = events.whereType<FileEdited>().single;
     expect(edit.original, isA<OriginalByPatch>());
@@ -602,7 +604,7 @@ Free space 1.0M tokens (97%)''',
         },
       },
     });
-    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(const Duration(milliseconds: 10));
 
     final edit = events.whereType<FileEdited>().single;
     expect(edit.original, isA<OriginalByPatch>());
@@ -654,7 +656,11 @@ Free space 1.0M tokens (97%)''',
 
   test('ChangeReview tracks and undoes AGY CRLF file edits', () async {
     final tempDir = Directory.systemTemp.createTempSync('agy_review_test');
-    addTearDown(() => tempDir.deleteSync(recursive: true));
+    addTearDown(() {
+      try {
+        tempDir.deleteSync(recursive: true);
+      } catch (_) {}
+    });
     final file = File('${tempDir.path}\\popup.js');
     file.writeAsStringSync('line1\r\nold code\r\nline3\r\n');
 
@@ -689,7 +695,7 @@ Free space 1.0M tokens (97%)''',
         },
       },
     });
-    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(const Duration(milliseconds: 10));
 
     final edit = events.whereType<FileEdited>().single;
     review.report(edit.change, original: edit.original);
@@ -701,5 +707,163 @@ Free space 1.0M tokens (97%)''',
 
     await review.undoAll();
     expect(file.readAsStringSync(), 'line1\r\nold code\r\nline3\r\n');
+  });
+
+  test('CodeDiffItem preserves actual file line numbers for middle file edits', () async {
+    final tempDir = Directory.systemTemp.createTempSync('agy-diff-lines-test');
+    addTearDown(() {
+      try {
+        tempDir.deleteSync(recursive: true);
+      } catch (_) {}
+    });
+    final file = File(p.join(tempDir.path, 'source.dart'));
+
+    // File with 109 lines before the target
+    final prefix = List.generate(109, (i) => 'line ${i + 1}').join('\n');
+    final before = '$prefix\nold code\nline 111\n';
+    file.writeAsStringSync(before);
+
+    final events = <KernelEvent>[];
+    final translator = AgyTranslator(
+      emit: events.add,
+      nextSeq: () => events.length,
+      readFile: (path) async => file.readAsString(),
+    )..beginTurn('turn-1');
+
+    // Simulate AGY tool ACTIVE capturing original
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_id': 'edit-1',
+        'tool_name': 'edit_file',
+        'state': 'ACTIVE',
+        'tool_info': {
+          'parameters': {'Path': file.path},
+        },
+      },
+    });
+
+    // File modified on disk
+    file.writeAsStringSync('$prefix\nnew code 1\nnew code 2\nline 111\n');
+
+    // Tool COMPLETED with Target and Replacement
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_id': 'edit-1',
+        'tool_name': 'edit_file',
+        'state': 'COMPLETED',
+        'tool_info': {
+          'parameters': {
+            'Path': file.path,
+            'Target': 'old code',
+            'Replacement': 'new code 1\nnew code 2',
+          },
+        },
+      },
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+
+    final item = events
+        .whereType<ItemUpserted>()
+        .map((e) => e.item)
+        .whereType<CodeDiffItem>()
+        .single;
+    expect(item.firstChangedLine, 110);
+    final removed = item.lines.firstWhere((l) => l.type == DiffLineType.removed);
+    expect(removed.lineNumber, 110);
+    expect(removed.text, 'old code');
+
+    final added = item.lines.where((l) => l.type == DiffLineType.added).toList();
+    expect(added, hasLength(2));
+    expect(added[0].lineNumber, 110);
+    expect(added[0].text, 'new code 1');
+    expect(added[1].lineNumber, 111);
+    expect(added[1].text, 'new code 2');
+  });
+
+  test('matches context lines before insertion point at line 110', () async {
+    final tempDir = Directory.systemTemp.createTempSync('agy-diff-context-test');
+    addTearDown(() {
+      try {
+        tempDir.deleteSync(recursive: true);
+      } catch (_) {}
+    });
+    final file = File(p.join(tempDir.path, 'source.dart'));
+
+    // 98 lines before target starts at line 99
+    final prefix = List.generate(98, (i) => 'prefix line ${i + 1}').join('\n');
+    final target = [
+      'class IdeFileListing {', // line 99
+      '  final bool truncated;', // line 100
+      '}', // line 101
+    ].join('\n');
+    file.writeAsStringSync('$prefix\n$target\n');
+
+    final replacement = [
+      'class IdeFileListing {', // line 99
+      '  final bool truncated;', // line 100
+      '}', // line 101
+      '', // line 102
+      'class IdeFileNameKey {', // line 103
+      '}', // line 104
+    ].join('\n');
+
+    final events = <KernelEvent>[];
+    final translator = AgyTranslator(
+      emit: events.add,
+      nextSeq: () => events.length,
+      readFile: (path) async => file.readAsString(),
+    )..beginTurn('turn-1');
+
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_id': 'edit-1',
+        'tool_name': 'edit_file',
+        'state': 'ACTIVE',
+        'tool_info': {
+          'parameters': {'Path': file.path},
+        },
+      },
+    });
+
+    file.writeAsStringSync('$prefix\n$replacement\n');
+
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_id': 'edit-1',
+        'tool_name': 'edit_file',
+        'state': 'COMPLETED',
+        'tool_info': {
+          'parameters': {
+            'Path': file.path,
+            'Target': target,
+            'Replacement': replacement,
+          },
+        },
+      },
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+
+    final item = events
+        .whereType<ItemUpserted>()
+        .map((e) => e.item)
+        .whereType<CodeDiffItem>()
+        .single;
+
+    // Context lines should have lineNumber 99, 100, 101
+    final contextLines = item.lines.where((l) => l.type == DiffLineType.context).toList();
+    expect(contextLines.map((l) => l.lineNumber).toList(), [99, 100, 101]);
+
+    // Added lines should start from line 102
+    final addedLines = item.lines.where((l) => l.type == DiffLineType.added).toList();
+    expect(addedLines.map((l) => l.lineNumber).toList(), [102, 103, 104]);
+    expect(item.firstChangedLine, 102);
   });
 }

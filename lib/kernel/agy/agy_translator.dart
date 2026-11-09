@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import '../../chat/chat_models.dart';
 import '../kernel_event.dart';
@@ -610,46 +611,42 @@ final class AgyTranslator {
     String? after,
   }) async {
     final key = _pathKey(path);
+    final fullBefore = await _beforeFiles[key]?.catchError((_) => null);
+    final fullAfter = await readFile?.call(path);
+
     if (before == null || after == null) {
       final snapshot = await readEditSnapshot?.call(path);
       before ??= snapshot?.before;
       after ??= snapshot?.after;
     }
-    before ??=
-        _reportedOriginals[key] ??
-        await _beforeFiles[key]?.catchError((_) => null);
-    after ??= _reportedOriginals['$key:after'] ?? await readFile?.call(path);
+    before ??= _reportedOriginals[key] ?? fullBefore;
+    after ??= _reportedOriginals['$key:after'] ?? fullAfter;
     final cleanBefore = before?.replaceAll('\r\n', '\n');
     final cleanAfter = after?.replaceAll('\r\n', '\n');
     if (cleanAfter == null && cleanBefore == null) return;
     if (cleanAfter == cleanBefore) return;
-    final diff = _unifiedDiff(cleanBefore, cleanAfter);
-    final oldLines = (cleanBefore ?? '').split('\n');
-    final newLines = (cleanAfter ?? '').split('\n');
-    final diffLines = <DiffLine>[];
-    final common = oldLines.length < newLines.length
-        ? oldLines.length
-        : newLines.length;
-    var added = 0;
-    var removed = 0;
-    for (var i = 0; i < common; i++) {
-      if (oldLines[i] == newLines[i]) {
-        diffLines.add(DiffLine(DiffLineType.context, i + 1, oldLines[i]));
-      } else {
-        diffLines.add(DiffLine(DiffLineType.removed, i + 1, oldLines[i]));
-        diffLines.add(DiffLine(DiffLineType.added, i + 1, newLines[i]));
-        removed++;
-        added++;
+
+    var startLine = 1;
+    if (cleanBefore != null && fullBefore != null) {
+      final normFile = fullBefore.replaceAll('\r\n', '\n');
+      final index = normFile.indexOf(cleanBefore);
+      if (index >= 0) {
+        startLine = '\n'.allMatches(normFile.substring(0, index)).length + 1;
       }
     }
-    for (var i = common; i < oldLines.length; i++) {
-      diffLines.add(DiffLine(DiffLineType.removed, i + 1, oldLines[i]));
-      removed++;
+    if (startLine == 1 && cleanAfter != null && fullAfter != null) {
+      final normFile = fullAfter.replaceAll('\r\n', '\n');
+      final index = normFile.indexOf(cleanAfter);
+      if (index >= 0) {
+        startLine = '\n'.allMatches(normFile.substring(0, index)).length + 1;
+      }
     }
-    for (var i = common; i < newLines.length; i++) {
-      diffLines.add(DiffLine(DiffLineType.added, i + 1, newLines[i]));
-      added++;
-    }
+
+    final diffResult = _computeDiff(
+      cleanBefore ?? '',
+      cleanAfter ?? '',
+      startLine: startLine,
+    );
     emit(
       ItemUpserted(
         nextSeq(),
@@ -659,53 +656,94 @@ final class AgyTranslator {
           directory: path.contains(RegExp(r'[/\\]'))
               ? path.substring(0, path.lastIndexOf(RegExp(r'[/\\]')))
               : '',
-          lines: diffLines,
-          added: added,
-          removed: removed,
+          lines: diffResult.lines,
+          added: diffResult.added,
+          removed: diffResult.removed,
         ),
       ),
     );
     emit(
       FileEdited(
         nextSeq(),
-        FileChange(path: path, added: added, removed: removed),
+        FileChange(
+          path: path,
+          added: diffResult.added,
+          removed: diffResult.removed,
+        ),
         turnId: turnId,
         original: before == null
             ? const OriginalText(null)
-            : OriginalByPatch(diff),
+            : OriginalByPatch(diffResult.diff),
       ),
     );
     _beforeFiles.remove(key);
   }
 
-  static String _unifiedDiff(String? before, String? after) {
-    final cleanBefore = before?.replaceAll('\r\n', '\n');
-    final cleanAfter = after?.replaceAll('\r\n', '\n');
-    final oldLines = (cleanBefore ?? '').split('\n');
-    final newLines = (cleanAfter ?? '').split('\n');
-    final lines = <String>[
-      '--- a/file',
-      '+++ b/file',
-      '@@ -1,${oldLines.length} +1,${newLines.length} @@',
-    ];
-    final common = oldLines.length < newLines.length
-        ? oldLines.length
-        : newLines.length;
-    for (var i = 0; i < common; i++) {
-      if (oldLines[i] == newLines[i]) {
-        lines.add(' ${oldLines[i]}');
-      } else {
-        lines.add('-${oldLines[i]}');
-        lines.add('+${newLines[i]}');
+  static ({List<DiffLine> lines, int added, int removed, String diff}) _computeDiff(
+    String before,
+    String after, {
+    int startLine = 1,
+  }) {
+    List<String> split(String text) {
+      if (text.isEmpty) return const [];
+      final lines = text.split('\n');
+      if (lines.length > 1 && lines.last.isEmpty) {
+        lines.removeLast();
+      }
+      return lines;
+    }
+
+    final a = split(before);
+    final b = split(after);
+    final common = a.length * b.length <= 250000
+        ? List.generate(a.length + 1, (_) => List.filled(b.length + 1, 0))
+        : null;
+    if (common != null) {
+      for (var i = a.length - 1; i >= 0; i--) {
+        for (var j = b.length - 1; j >= 0; j--) {
+          common[i][j] = a[i] == b[j]
+              ? common[i + 1][j + 1] + 1
+              : math.max(common[i + 1][j], common[i][j + 1]);
+        }
       }
     }
-    for (var i = common; i < oldLines.length; i++) {
-      lines.add('-${oldLines[i]}');
+    final diffLines = <DiffLine>[];
+    final unified = <String>[
+      '--- a/file',
+      '+++ b/file',
+      '@@ -$startLine,${a.length} +$startLine,${b.length} @@',
+    ];
+    var added = 0;
+    var removed = 0;
+    var i = 0;
+    var j = 0;
+    while (i < a.length || j < b.length) {
+      if (common != null && i < a.length && j < b.length && a[i] == b[j]) {
+        diffLines.add(DiffLine(DiffLineType.context, startLine + j, b[j]));
+        unified.add(' ${b[j]}');
+        i++;
+        j++;
+      } else if (i < a.length &&
+          (j == b.length ||
+              common == null ||
+              common[i + 1][j] >= common[i][j + 1])) {
+        diffLines.add(DiffLine(DiffLineType.removed, startLine + i, a[i]));
+        unified.add('-${a[i]}');
+        removed++;
+        i++;
+      } else {
+        diffLines.add(DiffLine(DiffLineType.added, startLine + j, b[j]));
+        unified.add('+${b[j]}');
+        added++;
+        j++;
+      }
     }
-    for (var i = common; i < newLines.length; i++) {
-      lines.add('+${newLines[i]}');
-    }
-    return lines.join('\n');
+    return (
+      lines: diffLines,
+      added: added,
+      removed: removed,
+      diff: unified.join('\n'),
+    );
   }
 
   void _result(Map<String, Object?> result) {
