@@ -39,7 +39,10 @@ final class AgyTranslator {
   final Future<void>? Function(String path)? beforeEdit;
   final Future<void>? Function(String path)? afterEdit;
   final Future<String?> Function(String path)? readFile;
-  final Future<({String before, String after})?> Function(String path)?
+  final Future<({String before, String after})?> Function(
+    String path, {
+    String? target,
+  })?
   readEditSnapshot;
   final Future<AgySubagentTranscript> Function(String conversation)?
   readSubagentTranscript;
@@ -49,7 +52,8 @@ final class AgyTranslator {
     nextSeq,
   );
   final Map<String, Future<String?>> _beforeFiles = {};
-  final Map<String, String> _reportedOriginals = {};
+  final Map<String, ({String? before, String? after})> _reportedEditPayloads =
+      {};
   final Map<String, AgentItem> _agents = {};
   final Map<String, String> _agentIdsByTool = {};
   final Map<String, List<ChatItem>> _agentChildren = {};
@@ -68,6 +72,8 @@ final class AgyTranslator {
   /// multiple `step_update` events for one tool, so the id must not be based
   /// on the number of updates received.
   final Map<String, String> _toolIds = {};
+  final Map<String, String> _activeToolIds = {};
+  int _toolCount = 0;
   final Map<String, DateTime> _tools = {};
 
   void answer(String requestId, InteractionAnswer answer) {
@@ -86,9 +92,12 @@ final class AgyTranslator {
     textId = null;
     textLength = 0;
     startedAt = null;
+    _toolCount = 0;
     _tools.clear();
     _toolIds.clear();
-    _reportedOriginals.clear();
+    _activeToolIds.clear();
+    _reportedEditPayloads.clear();
+    _beforeFiles.clear();
   }
 
   void accept(Map<String, Object?> message) {
@@ -152,16 +161,34 @@ final class AgyTranslator {
         : _decodeParameters(step['arguments']) ??
               _decodeParameters(info['arguments']) ??
               const <String, Object?>{};
-    final toolKey =
+    final explicitId =
         _string(step['tool_id']) ??
         _string(step['id']) ??
         _string(info['tool_id']) ??
-        _string(info['id']) ??
-        '$name:${_string(step['step_index']) ?? parameters.toString()}';
-    final id = _toolIds.putIfAbsent(
-      toolKey,
-      () => '$turnId:tool:${_toolIds.length}',
-    );
+        _string(info['id']);
+    final stepIndex = _string(step['step_index']);
+    final command =
+        _string(parameters['CommandLine']) ?? _string(parameters['command']);
+    final path = _string(parameters['Path']) ?? _string(parameters['path']);
+    final fileKey = path == null ? null : _pathKey(path);
+    final scopeKey = '$name:${fileKey ?? command ?? ''}';
+
+    final String id;
+    if (explicitId != null) {
+      id = _toolIds.putIfAbsent(
+        explicitId,
+        () => '$turnId:tool:${_toolCount++}',
+      );
+    } else if (stepIndex != null) {
+      id = _toolIds.putIfAbsent(
+        '$name:step:$stepIndex',
+        () => '$turnId:tool:${_toolCount++}',
+      );
+    } else if (_activeToolIds.containsKey(scopeKey)) {
+      id = _activeToolIds[scopeKey]!;
+    } else {
+      id = '$turnId:tool:${_toolCount++}';
+    }
     final interactionId = _interactions.parse(step, info);
     if (interactionId != null) _interactionTools[interactionId] = name;
     final state =
@@ -183,6 +210,11 @@ final class AgyTranslator {
       'CANCELLED',
       'CANCELED',
     }.contains(state);
+    if (!done && scopeKey.isNotEmpty) {
+      _activeToolIds[scopeKey] = id;
+    } else if (done) {
+      _activeToolIds.remove(scopeKey);
+    }
     final failed = const {
       'ERROR',
       'FAILED',
@@ -217,9 +249,6 @@ final class AgyTranslator {
         _string(parameters['replacement']) ??
         _string(parameters['Content']) ??
         _string(parameters['content']);
-    final command =
-        _string(parameters['CommandLine']) ?? _string(parameters['command']);
-    final path = _string(parameters['Path']) ?? _string(parameters['path']);
     final isAgent = _isAgentTool(name);
     _tools.putIfAbsent(id, DateTime.now);
     final agentId =
@@ -233,12 +262,12 @@ final class AgyTranslator {
     if (parentAgent case final parent?) {
       _agentParents[agentId] = parent;
     }
-    final fileKey = path == null ? null : _pathKey(path);
-    if (path != null && original != null) {
-      _reportedOriginals[fileKey!] = original;
-    }
-    if (path != null && newContent != null) {
-      _reportedOriginals['$fileKey:after'] = newContent;
+    if (original != null || newContent != null) {
+      final existing = _reportedEditPayloads[id];
+      _reportedEditPayloads[id] = (
+        before: original ?? existing?.before,
+        after: newContent ?? existing?.after,
+      );
     }
     if (fileKey != null && !_beforeFiles.containsKey(fileKey)) {
       _beforeFiles[fileKey] = _captureBefore(path!);
@@ -318,7 +347,9 @@ final class AgyTranslator {
     final target = taskPresentation?.target ??
         (kind == ToolKind.web
             ? _string(parameters['query']) ?? name
-            : mcp?.target ?? (isFilePath ? _baseName(path) : path) ?? name);
+            : (mcp != null
+                ? (mcp.target ?? '')
+                : (isFilePath ? _baseName(path) : path) ?? name));
     final item = command != null
         ? TerminalItem(
             command: command,
@@ -356,14 +387,17 @@ final class AgyTranslator {
       _updateParent(finishedAgent);
     }
     if (path != null && done && kind == ToolKind.edit) {
+      final payload = _reportedEditPayloads[id];
+      final editBefore = original ?? payload?.before;
+      final editAfter = newContent ?? payload?.after;
       unawaited(afterEdit?.call(path));
       unawaited(
         _reportFile(
           path,
           turnId: turnId,
           itemId: id,
-          before: original,
-          after: newContent,
+          before: editBefore,
+          after: editAfter,
         ),
       );
     }
@@ -656,12 +690,13 @@ final class AgyTranslator {
     final fullAfter = await readFile?.call(path);
 
     if (before == null || after == null) {
-      final snapshot = await readEditSnapshot?.call(path);
+      final snapshot = await readEditSnapshot?.call(path, target: before);
       before ??= snapshot?.before;
       after ??= snapshot?.after;
     }
-    before ??= _reportedOriginals[key] ?? fullBefore;
-    after ??= _reportedOriginals['$key:after'] ?? fullAfter;
+    final payload = _reportedEditPayloads[itemId];
+    before ??= payload?.before ?? fullBefore;
+    after ??= payload?.after ?? fullAfter;
     final cleanBefore = before?.replaceAll('\r\n', '\n');
     final cleanAfter = after?.replaceAll('\r\n', '\n');
     if (cleanAfter == null && cleanBefore == null) return;
@@ -717,7 +752,11 @@ final class AgyTranslator {
             : OriginalByPatch(diffResult.diff),
       ),
     );
-    _beforeFiles.remove(key);
+    if (fullAfter != null) {
+      _beforeFiles[key] = Future.value(fullAfter);
+    } else {
+      _beforeFiles.remove(key);
+    }
   }
 
   static ({List<DiffLine> lines, int added, int removed, String diff}) _computeDiff(

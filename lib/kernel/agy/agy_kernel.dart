@@ -461,14 +461,16 @@ final class AntigravityKernel
   }
 
   Future<({String before, String after})?> _readEditSnapshot(
-    String path,
-  ) async {
+    String path, {
+    String? target,
+  }) async {
     final conversation = _sessionId;
     if (conversation == null) return null;
     for (var attempt = 0; attempt < 10; attempt++) {
       final snapshot = await _editTranscript.read(
         conversation: conversation,
         path: path,
+        target: target,
       );
       if (snapshot != null) {
         return (before: snapshot.before, after: snapshot.after);

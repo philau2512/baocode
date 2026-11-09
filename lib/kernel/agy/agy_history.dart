@@ -264,9 +264,9 @@ final class AgyHistory {
     return ToolCallItem(
       kind: tool.kind,
       target: task?.target ??
-          tool.mcp?.target ??
-          (isFilePath ? _baseName(path) : path) ??
-          tool.name,
+          (tool.mcp != null
+              ? (tool.mcp!.target ?? '')
+              : (isFilePath ? _baseName(path) : path) ?? tool.name),
       path: path,
       detail: task?.detail ??
           (tool.kind == ToolKind.read ? _readRange(tool.input) : null),

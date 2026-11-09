@@ -432,7 +432,8 @@ Free space 1.0M tokens (97%)''',
     final translator = AgyTranslator(
       emit: events.add,
       nextSeq: () => events.length,
-      readEditSnapshot: (_) async => (before: 'before\n', after: 'after\n'),
+      readEditSnapshot: (_, {target}) async =>
+          (before: 'before\n', after: 'after\n'),
     )..beginTurn('turn-1');
 
     translator.accept({
@@ -865,5 +866,98 @@ Free space 1.0M tokens (97%)''',
     final addedLines = item.lines.where((l) => l.type == DiffLineType.added).toList();
     expect(addedLines.map((l) => l.lineNumber).toList(), [102, 103, 104]);
     expect(item.firstChangedLine, 102);
+  });
+
+  test('handles multiple sequential edits on the same file without overwriting', () async {
+    final events = <KernelEvent>[];
+    final dir = Directory.systemTemp.createTempSync('agy-multi-edit-');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final file = File('${dir.path}/test_file.dart')
+      ..writeAsStringSync('line 1\nline 2\nline 3\n');
+
+    final translator = AgyTranslator(
+      emit: events.add,
+      nextSeq: () => events.length,
+      readFile: (path) async => File(path).readAsString(),
+    )..beginTurn('turn-1');
+
+    // First edit: change line 1
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_name': 'edit_file',
+        'state': 'ACTIVE',
+        'tool_info': {
+          'parameters': {
+            'Path': file.path,
+            'Target': 'line 1\n',
+            'Replacement': 'line 1 edited\n',
+          },
+        },
+      },
+    });
+    file.writeAsStringSync('line 1 edited\nline 2\nline 3\n');
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_name': 'edit_file',
+        'state': 'COMPLETED',
+        'tool_info': {
+          'parameters': {'Path': file.path},
+        },
+      },
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    // Second edit on the same file: change line 3
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_name': 'edit_file',
+        'state': 'ACTIVE',
+        'tool_info': {
+          'parameters': {
+            'Path': file.path,
+            'Target': 'line 3\n',
+            'Replacement': 'line 3 edited\n',
+          },
+        },
+      },
+    });
+    file.writeAsStringSync('line 1 edited\nline 2\nline 3 edited\n');
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_name': 'edit_file',
+        'state': 'COMPLETED',
+        'tool_info': {
+          'parameters': {'Path': file.path},
+        },
+      },
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    // Must emit two distinct CodeDiffItem entries with distinct item IDs
+    final diffItems = events
+        .whereType<ItemUpserted>()
+        .where((e) => e.item is CodeDiffItem)
+        .toList();
+    expect(diffItems.length, 2);
+    expect(diffItems[0].id, isNot(equals(diffItems[1].id)));
+
+    // Must emit two FileEdited events
+    final fileEdits = events.whereType<FileEdited>().toList();
+    expect(fileEdits.length, 2);
+
+    final item1 = diffItems[0].item as CodeDiffItem;
+    final item2 = diffItems[1].item as CodeDiffItem;
+    expect(item1.added, 1);
+    expect(item1.removed, 1);
+    expect(item2.added, 1);
+    expect(item2.removed, 1);
   });
 }

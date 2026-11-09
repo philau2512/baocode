@@ -18,17 +18,28 @@ final class AgyEditTranscriptReader {
   AgyEditTranscriptReader({this.home});
 
   final String? home;
-  final Map<String, Future<Map<String, AgyEditSnapshot>>> _reads = {};
+  final Map<String, Future<Map<String, List<AgyEditSnapshot>>>> _reads = {};
 
   Future<AgyEditSnapshot?> read({
     required String conversation,
     required String path,
+    String? target,
+    int? editIndex,
   }) async {
     if (conversation.isEmpty) return null;
     final future = _reads[conversation] ??= _read(conversation);
     try {
       final snapshots = await future;
-      return snapshots[_pathKey(path)];
+      final list = snapshots[_pathKey(path)];
+      if (list == null || list.isEmpty) return null;
+      if (target != null && target.trim().isNotEmpty) {
+        final match = list.where((s) => s.before == target).firstOrNull;
+        if (match != null) return match;
+      }
+      if (editIndex != null && editIndex >= 0 && editIndex < list.length) {
+        return list[editIndex];
+      }
+      return list.last;
     } finally {
       // Share only an in-flight scan. A later edit must rescan, otherwise it
       // could receive an older snapshot for the same file.
@@ -38,7 +49,7 @@ final class AgyEditTranscriptReader {
     }
   }
 
-  Future<Map<String, AgyEditSnapshot>> _read(String conversation) async {
+  Future<Map<String, List<AgyEditSnapshot>>> _read(String conversation) async {
     final base = home ??
         Platform.environment['USERPROFILE'] ??
         Platform.environment['HOME'];
@@ -54,7 +65,7 @@ final class AgyEditTranscriptReader {
       'transcript_full.jsonl',
     ));
     if (!await transcript.exists()) return const {};
-    final snapshots = <String, AgyEditSnapshot>{};
+    final snapshots = <String, List<AgyEditSnapshot>>{};
     try {
       await for (final line in transcript
           .openRead()
@@ -70,10 +81,9 @@ final class AgyEditTranscriptReader {
           final before = args['Target'] ?? args['target'];
           final after = args['Replacement'] ?? args['replacement'];
           if (path is String && before is String && after is String) {
-            snapshots[_pathKey(path)] = AgyEditSnapshot(
-              before: before,
-              after: after,
-            );
+            snapshots
+                .putIfAbsent(_pathKey(path), () => <AgyEditSnapshot>[])
+                .add(AgyEditSnapshot(before: before, after: after));
           }
         }
       }
@@ -87,10 +97,14 @@ final class AgyEditTranscriptReader {
 Future<AgyEditSnapshot?> readAgyEditSnapshot({
   required String conversation,
   required String path,
+  String? target,
+  int? editIndex,
   String? home,
 }) => AgyEditTranscriptReader(home: home).read(
   conversation: conversation,
   path: path,
+  target: target,
+  editIndex: editIndex,
 );
 
 String _pathKey(String path) => path.replaceAll('\\', '/').toLowerCase();

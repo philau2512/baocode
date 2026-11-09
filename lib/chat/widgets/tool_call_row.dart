@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import '../../kernel/agy/agy_mcp_plugin.dart';
 import '../../l10n/l10n.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/material_file_icons.dart';
@@ -94,7 +95,10 @@ class ToolCallRow extends StatelessWidget {
   bool get _opens =>
       kind != ToolKind.read &&
       _answered == null &&
-      (results.isNotEmpty || _shown != null || images.isNotEmpty);
+      (results.isNotEmpty || _shown != null || images.isNotEmpty || _mcpCommand != null);
+
+  String? get _mcpCommand =>
+      kind == ToolKind.mcp ? AgyMcpPluginParser.extractCommand(input) : null;
 
   /// MCP output can contain `path:line` fragments too, but unlike grep it is
   /// structured tool output and must remain complete when the row expands.
@@ -264,7 +268,7 @@ class ToolCallRow extends StatelessWidget {
           StepBody(child: _QuestionAnswers(answered: answered))
         else if (_todos case final todos? when expanded)
           StepBody(child: _TodoList(todos: todos))
-        else if (expanded && (results.isNotEmpty || _shown != null))
+        else if (expanded && (results.isNotEmpty || _shown != null || _mcpCommand != null))
           StepBody(
             child: _showsSearchResults && files != null
                 ? _Results(
@@ -274,6 +278,8 @@ class ToolCallRow extends StatelessWidget {
                         ? input['pattern'] as String
                         : null,
                   )
+                : _mcpCommand != null
+                ? _McpBody(command: _mcpCommand!, output: _shown)
                 : Text(_shown ?? results.join('\n'), style: stepMono),
           ),
         if (expanded && images.isNotEmpty) ToolImages(images: _images),
@@ -655,6 +661,49 @@ class _SetGoalButtonState extends State<_SetGoalButton> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Displays the invoked MCP query/command and its output below it.
+class _McpBody extends StatelessWidget {
+  const _McpBody({required this.command, required this.output});
+
+  final String command;
+  final String? output;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text.rich(
+          TextSpan(
+            children: [
+              TextSpan(
+                text: '> ',
+                style: TextStyle(color: AppColors.textFaint),
+              ),
+              TextSpan(
+                text: command,
+                style: TextStyle(
+                  color: themeColors['terminal.ansiBrightCyan'],
+                ),
+              ),
+            ],
+          ),
+          style: stepMono,
+        ),
+        if (output != null && output!.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Container(
+            height: 1,
+            color: themeColors['panel.border'],
+          ),
+          const SizedBox(height: 10),
+          Text(output!, style: stepMono),
+        ],
+      ],
     );
   }
 }
