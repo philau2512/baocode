@@ -1005,19 +1005,17 @@ InlineSpan _inline(md.Node node, MarkdownOptions options) {
             _linkIcon(
               icon,
               recognizer,
-              const EdgeInsets.only(left: 4, right: 3),
-            )
-          else
-            const TextSpan(text: ' '),
+              const EdgeInsets.only(right: 3),
+            ),
           TextSpan(
-            text: '${_unescape(node.textContent)} ',
+            text: _unescape(node.textContent),
             recognizer: recognizer,
             mouseCursor: SystemMouseCursors.click,
           ),
         ],
       ),
       null => InlineCodeSpan(
-        text: ' ${_unescape(node.textContent)} ',
+        text: _unescape(node.textContent),
         style: MarkdownView.codeStyle,
       ),
     },
@@ -1119,12 +1117,20 @@ WidgetSpan _linkIcon(
 InlineSpan _linked(InlineSpan span, GestureRecognizer recognizer) =>
     switch (span) {
       // Code in a link keeps its background, and goes where the link does.
-      InlineCodeSpan(:final text, :final style) => InlineCodeSpan(
-        text: text,
-        style: style,
-        recognizer: recognizer,
-        mouseCursor: SystemMouseCursors.click,
-      ),
+      InlineCodeSpan(:final text, :final style, :final children) =>
+        InlineCodeSpan(
+          text: (text ??
+                  children
+                      ?.whereType<TextSpan>()
+                      .map((t) => t.text)
+                      .join())
+              ?.trim(),
+          style: (style ?? MarkdownView.codeStyle).copyWith(
+            color: AppColors.accent,
+          ),
+          recognizer: recognizer,
+          mouseCursor: SystemMouseCursors.click,
+        ),
       // An image in a link (`[![alt](src)](href)`).
       WidgetSpan(:final child, :final alignment)
           when recognizer is TapGestureRecognizer =>
