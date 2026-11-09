@@ -12,6 +12,7 @@ import 'package:baocode/kernel/agy/agy_translator.dart';
 import 'package:baocode/kernel/agy/agy_subagent_transcript.dart';
 import 'package:baocode/kernel/kernel_event.dart';
 import 'package:baocode/kernel/kernel_types.dart';
+import 'package:baocode/kernel/transcript.dart';
 
 void main() {
   test('updates one AGY tool item from active to completed', () {
@@ -959,5 +960,66 @@ Free space 1.0M tokens (97%)''',
     expect(item1.removed, 1);
     expect(item2.added, 1);
     expect(item2.removed, 1);
+  });
+
+  test('preserves strict temporal order between assistant texts and tool calls', () {
+    final events = <KernelEvent>[];
+    final transcript = Transcript();
+    void emit(KernelEvent event) {
+      events.add(event);
+      transcript.apply(event);
+    }
+
+    final translator = AgyTranslator(
+      emit: emit,
+      nextSeq: () => events.length + 1,
+    )..beginTurn('turn-1');
+
+    // 1. Initial assistant text before tool
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'agent_response',
+        'text_delta': 'Starting work...',
+      },
+    });
+
+    // 2. Tool call in the middle
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_id': 'tool-1',
+        'tool_name': 'read_file',
+        'state': 'COMPLETED',
+        'tool_info': {
+          'parameters': {'Path': 'pubspec.yaml'},
+        },
+      },
+    });
+
+    // 3. Final assistant text after tool
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'agent_response',
+        'text_delta': 'Completed all tasks!',
+      },
+    });
+
+    // Verify Transcript order
+    expect(transcript.length, 3);
+    final item0 = transcript.itemAt(0);
+    final item1 = transcript.itemAt(1);
+    final item2 = transcript.itemAt(2);
+
+    expect(item0, isA<AssistantTextItem>());
+    expect((item0 as AssistantTextItem).text, 'Starting work...');
+
+    expect(item1, isA<ToolCallItem>());
+    expect((item1 as ToolCallItem).tool, 'read_file');
+
+    expect(item2, isA<AssistantTextItem>());
+    expect((item2 as AssistantTextItem).text, 'Completed all tasks!');
   });
 }

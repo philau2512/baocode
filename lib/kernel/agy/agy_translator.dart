@@ -66,6 +66,7 @@ final class AgyTranslator {
   String? turnId;
   String? textId;
   int textLength = 0;
+  int _textCount = 0;
   DateTime? startedAt;
 
   /// Maps AGY's tool identity to the stable BaoCode item id. AGY emits
@@ -91,6 +92,7 @@ final class AgyTranslator {
     turnId = null;
     textId = null;
     textLength = 0;
+    _textCount = 0;
     startedAt = null;
     _toolCount = 0;
     _tools.clear();
@@ -132,7 +134,7 @@ final class AgyTranslator {
     final delta = _string(step['text_delta']) ?? '';
     if (delta.isEmpty) return;
     _begin();
-    final id = textId ??= '$turnId:assistant';
+    final id = textId ??= '$turnId:assistant:${_textCount++}';
     if (textLength == 0) {
       emit(
         ItemUpserted(
@@ -149,6 +151,11 @@ final class AgyTranslator {
 
   void _tool(Map<String, Object?> step) {
     _begin();
+    if (textId != null) {
+      emit(ItemCompleted(nextSeq(), textId!));
+      textId = null;
+      textLength = 0;
+    }
     final name = _string(step['tool_name']) ?? _string(step['name']) ?? 'tool';
     final info = _map(step['tool_info']);
     final subagentInfo = _map(step['subagent_info']).isNotEmpty
