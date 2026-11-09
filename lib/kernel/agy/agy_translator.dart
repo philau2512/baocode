@@ -282,7 +282,7 @@ final class AgyTranslator {
     final target = taskPresentation?.target ??
         (kind == ToolKind.web
             ? _string(parameters['query']) ?? name
-            : mcp?.target ?? (isFilePath ? _baseName(path!) : path) ?? name);
+            : mcp?.target ?? (isFilePath ? _baseName(path) : path) ?? name);
     final item = command != null
         ? TerminalItem(
             command: command,
