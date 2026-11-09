@@ -89,7 +89,6 @@ class ProblemsService implements WorkbenchDisposable {
     if (languages == null) return;
     await languages.rescanDiagnostics(readText: readText ?? language.readText);
   }
-
   /// F8 / ⇧F8: the next or previous problem across files, with its hover.
   void go({required bool next}) {
     final languages = language.languages;

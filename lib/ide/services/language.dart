@@ -102,7 +102,6 @@ class LanguageService extends ChangeNotifier {
     }
     return workspace.files.read(path);
   }
-
   /// The display language can be read: what waited for it is done.
   void localized() {
     if (_localized) return;
