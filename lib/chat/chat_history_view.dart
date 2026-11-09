@@ -292,7 +292,12 @@ class _ChatHistoryViewState extends State<ChatHistoryView>
     final l10n = context.l10n;
     return [
       if (row.work case StepFold(:final worked?) && final fold)
-        WorkFoldLine.text(worked, turnEdits(_itemsIn(fold)), l10n: l10n),
+        WorkFoldLine.text(
+          worked,
+          turnEdits(_itemsIn(fold)),
+          l10n: l10n,
+          stopped: fold.stopped,
+        ),
       if (row.steps case final fold?)
         StepsFoldLine.text(StepTally(_itemsIn(fold)), l10n: l10n),
       if (row.item)
@@ -322,11 +327,11 @@ class _ChatHistoryViewState extends State<ChatHistoryView>
 
   /// The editor opening: its placeholder grows from the message's height
   /// to the editor's, and the editor shows as much of itself as it does.
-  late final AnimationController _editorReveal = AnimationController(
-    vsync: this,
-    duration: _motionDuration,
-    value: 1,
-  );
+  late final AnimationController _editorReveal =
+      AnimationController(vsync: this, duration: _motionDuration, value: 1)
+        ..addStatusListener((status) {
+          if (status.isCompleted) _ensureEditorVisible();
+        });
 
   /// The message's height, where the placeholder grows from.
   double _editorFromHeight = 0;
@@ -434,8 +439,10 @@ class _ChatHistoryViewState extends State<ChatHistoryView>
         _feed.isStreaming &&
         !MediaQuery.disableAnimationsOf(context)) {
       for (var index = _seenItems; index < count; index++) {
-        // The user's own messages are in place as they are sent.
-        if (_feed.itemAt(index) is! UserMessageItem) _appearing.add(index);
+        // The user's own messages are in place as they are sent; step items
+        // (tool calls, thoughts, diffs) appear instantly without motion.
+        final item = _feed.itemAt(index);
+        if (item is! UserMessageItem && !isStep(item)) _appearing.add(index);
       }
       if (_statusShown &&
           !statusShown &&
@@ -1709,6 +1716,33 @@ class _ChatHistoryViewState extends State<ChatHistoryView>
     if (height == _editorHeight || _editingIndex == null) return;
     setState(() => _editorHeight = height);
     _editorMoved.value++;
+    if (_editorReveal.isCompleted) _ensureEditorVisible();
+  }
+
+  /// Once the placeholder has its full height, reveal only what extends
+  /// below the history. The editor is painted above the list, so its own
+  /// scrollable cannot bring it into view there.
+  void _ensureEditorVisible() {
+    final index = _editingIndex;
+    if (index == null) return;
+    final key = _editComposerKey;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          _editingIndex != index ||
+          _editComposerKey != key ||
+          !_scrollController.hasClients) {
+        return;
+      }
+      final placeholder = _editorPlaceholderKey.currentContext
+          ?.findRenderObject();
+      if (placeholder == null || !placeholder.attached) return;
+      unawaited(
+        _scrollController.position.ensureVisible(
+          placeholder,
+          alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+        ),
+      );
+    });
   }
 
   /// Room above the editor stuck to the top of the list: as above the
@@ -1795,13 +1829,20 @@ class _ChatHistoryViewState extends State<ChatHistoryView>
         ?_topTurnMessage(),
         if (_sticks)
           for (final item in _laidOutItems())
-            if (_feed.itemAt(_indexOf(item)) is UserMessageItem) _indexOf(item),
+            if (_sticksAt(_indexOf(item))) _indexOf(item),
       };
       if (setEquals(indices, _stickyIndices)) return;
       _stickyKeys.removeWhere((index, _) => !indices.contains(index));
       setState(() => _stickyIndices = indices);
     });
   }
+
+  /// Whether the item at [index] is a message the user sent, which sticks
+  /// at the top: not a subagent's.
+  bool _sticksAt(int index) => switch (_feed.itemAt(index)) {
+    UserMessageItem(fromAgent: null) => true,
+    _ => false,
+  };
 
   /// The user message of the turn at the top of the view: the last one
   /// scrolled past the top. (It keeps the top while the next one, below,
@@ -1815,14 +1856,14 @@ class _ChatHistoryViewState extends State<ChatHistoryView>
     for (final item in _laidOutItems()) {
       final index = _indexOf(item);
       first ??= index;
-      if (_feed.itemAt(index) is! UserMessageItem) continue;
+      if (!_sticksAt(index)) continue;
       if (_messageTop(index, list)! >= _stickyInset) break;
       passed = index;
     }
     if (passed != null || first == null) return passed;
     // Scrolled past long ago: above the laid-out items.
     for (var index = first - 1; index >= 0; index--) {
-      if (_feed.itemAt(index) is UserMessageItem) return index;
+      if (_sticksAt(index)) return index;
     }
     return null;
   }
@@ -1852,7 +1893,7 @@ class _ChatHistoryViewState extends State<ChatHistoryView>
     if (sticky == null || !sticky.hasSize || list == null) return null;
     for (final item in _laidOutItems()) {
       final next = _indexOf(item);
-      if (next <= index || _feed.itemAt(next) is! UserMessageItem) {
+      if (next <= index || !_sticksAt(next)) {
         continue;
       }
       final nextTop = _messageTop(next, list)!;
@@ -2177,22 +2218,24 @@ class _ChatHistoryViewState extends State<ChatHistoryView>
   /// Row [index] of the list: [child] in the column, [gap] below the row
   /// before it.
   Widget _row(int index, {required double gap, required Widget child}) =>
-      ChatColumn(
-        maxWidth: widget.maxContentWidth,
-        right: _columnRight,
-        left: _columnLeft,
-        room: _room,
-        roomFrom: ChatMinimap.roomFrom,
-        child: Padding(
-          // All but the user's messages a little narrower than those.
-          padding: EdgeInsets.only(
-            top: gap,
-            left: _insetOf(index),
-            right: _insetOf(index),
-          ),
-          child: ChatFindRow(
-            index: index,
-            child: _HeightMotion(motion: _motions[index] ?? 0, child: child),
+      RepaintBoundary(
+        child: ChatColumn(
+          maxWidth: widget.maxContentWidth,
+          right: _columnRight,
+          left: _columnLeft,
+          room: _room,
+          roomFrom: ChatMinimap.roomFrom,
+          child: Padding(
+            // All but the user's messages a little narrower than those.
+            padding: EdgeInsets.only(
+              top: gap,
+              left: _insetOf(index),
+              right: _insetOf(index),
+            ),
+            child: ChatFindRow(
+              index: index,
+              child: _HeightMotion(motion: _motions[index] ?? 0, child: child),
+            ),
           ),
         ),
       );
@@ -2273,7 +2316,9 @@ class _ChatHistoryViewState extends State<ChatHistoryView>
         item: item,
         expanded: _isExpanded(index),
         onToggle: () => _toggle(index),
-        onEdit: item is UserMessageItem ? () => _startEditing(index) : null,
+        onEdit: item is UserMessageItem && item.fromAgent == null
+            ? () => _startEditing(index)
+            : null,
         onMoveToBackground: _feed.moveToBackgroundAt(index),
         onStop: _feed.stopAt(index),
         onOpen: switch ((item, widget.onOpenAgent)) {
@@ -2289,6 +2334,7 @@ class _ChatHistoryViewState extends State<ChatHistoryView>
           width: double.infinity,
         ),
         LiveStatusItem() => view,
+        _ when isStep(item) => view,
         _ => _Appear(
           key: ValueKey(('appear', index)),
           appear: _appearing.contains(index),
@@ -2312,6 +2358,7 @@ class _ChatHistoryViewState extends State<ChatHistoryView>
                   if (row.work case StepFold(:final worked?) && final fold) ...[
                     WorkFoldLine(
                       worked: worked,
+                      stopped: fold.stopped,
                       edits: turnEdits(_itemsIn(fold)),
                       images: foldImages(_itemsIn(fold)),
                       expanded: _isFoldOpen(fold),
@@ -2664,12 +2711,10 @@ class _ChatHistoryViewState extends State<ChatHistoryView>
                                 // Soft fades where content continues past an edge
                                 // (none when nothing is there, e.g. pinned to the
                                 // bottom).
-                                child: EdgeFadeMask(
+                                child: _ChatEdgeFadeOverlay(
                                   top: _contentAbove,
                                   bottom: _contentBelow,
-                                  topFadeLength: _topFade,
-                                  // Hidden under the stuck message, fading in
-                                  // below it.
+                                  fadeLength: _topFade,
                                   topCover: _stickyCover,
                                   coverFade: _stickyFade,
                                   topFadeAmount: _listTopFade,
@@ -2677,8 +2722,6 @@ class _ChatHistoryViewState extends State<ChatHistoryView>
                                     _scrollController,
                                     _editorMoved,
                                   ]),
-                                  // Its bar is the one around the selection, above; not a second
-                                  // one of the platform's own.
                                   child: ScrollConfiguration(
                                     behavior: ScrollConfiguration.of(context)
                                         .copyWith(scrollbars: false),
@@ -2887,6 +2930,117 @@ class _JumpToBottomButton extends StatelessWidget {
 /// Keeps the viewport pinned to the end while [anchored], applied during
 /// layout so growing content or a shrinking viewport never shows a frame
 /// that is off the bottom.
+/// Local fade overlays for the chat viewport.
+///
+/// Unlike [EdgeFadeMask], this paints only the small edge strips. The history
+/// itself stays outside an offscreen shader layer while it is being scrolled.
+class _ChatEdgeFadeOverlay extends StatelessWidget {
+  const _ChatEdgeFadeOverlay({
+    required this.top,
+    required this.bottom,
+    required this.fadeLength,
+    required this.topCover,
+    required this.coverFade,
+    required this.topFadeAmount,
+    required this.repaint,
+    required this.child,
+  });
+
+  final bool top;
+  final bool bottom;
+  final double fadeLength;
+  final ValueGetter<double?> topCover;
+  final double coverFade;
+  final ValueGetter<double> topFadeAmount;
+  final Listenable repaint;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: repaint,
+    builder: (context, _) {
+      final cover = topCover();
+      // The common scrolling case uses only the small local overlays below.
+      // The sticky cover is represented by the same top overlay, rather than
+      // reintroducing a full-viewport shader layer.
+      final surface = AppColors.conversationSurface;
+      final topCoverHeight = cover == null ? 0.0 : math.max(0.0, cover);
+      final amount = topFadeAmount().clamp(0.0, 1.0);
+      final showTopFade = top && amount > 0;
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          child,
+          if (topCoverHeight > 0)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              height: topCoverHeight + coverFade,
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [surface, surface, surface.withValues(alpha: 0)],
+                      stops: [
+                        0,
+                        (topCoverHeight / (topCoverHeight + coverFade)).clamp(
+                          0.0,
+                          1.0,
+                        ),
+                        1,
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          if (showTopFade)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              height: fadeLength,
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [surface, surface.withValues(alpha: 0)],
+                      stops: [0, amount],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          if (bottom)
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              height: fadeLength,
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.bottomCenter,
+                      end: Alignment.topCenter,
+                      colors: [surface, surface.withValues(alpha: 0)],
+                      stops: const [0, 1],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      );
+    },
+  );
+}
+
 class _BottomAnchoredScrollController extends SmoothScrollController {
   bool anchored = true;
 

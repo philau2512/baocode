@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import 'agent_kernel.dart';
+import 'agy/agy_kernel.dart';
+import 'agy/agy_storage.dart';
 import 'claude_code/claude_code_kernel.dart';
 import '../remote/remote_claude.dart';
 
@@ -26,7 +28,16 @@ abstract final class KernelRegistry {
     catalog: const ClaudeCatalog(),
   );
 
-  static List<KernelDescriptor> _all = [claudeCode];
+  static final KernelDescriptor antigravity = KernelDescriptor(
+    id: 'antigravity',
+    label: 'Antigravity',
+    icon: Icons.auto_awesome_rounded,
+    description: 'Google Antigravity coding agent',
+    catalog: agySessionCatalog,
+    create: (context) => AntigravityKernel(antigravity, context),
+  );
+
+  static List<KernelDescriptor> _all = [claudeCode, antigravity];
 
   static List<KernelDescriptor> get all => _all;
 

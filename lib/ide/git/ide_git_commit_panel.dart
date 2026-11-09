@@ -1499,19 +1499,47 @@ class IdeGitCommitPanelState extends State<IdeGitCommitPanel>
   /// checked files' diff); again while it runs, cancels it.
   Future<void> _generateMessage() async {
     final model = widget.commitMessage;
-    final git = _git;
-    final state = git?.state;
-    if (model == null || git == null || state == null) return;
+    if (model == null) return;
     final l10n = context.l10n;
     if (_session.generating case final running?) {
       running.complete();
       return;
     }
+
+    final targetGits = [
+      for (final git in _repositories)
+        if (git.state != null && _toCommit(git).isNotEmpty) git,
+    ];
+    final gits = targetGits.isNotEmpty
+        ? targetGits
+        : [if (_git case final git? when git.state != null) git];
+
+    if (gits.isEmpty) {
+      widget.notifications.notify(
+        IdeSeverity.info,
+        l10n.scmNoChangesToGenerate,
+      );
+      return;
+    }
+
     final cancel = _session.generating = Completer<void>();
     setState(() {});
     try {
-      final diff = await _commitDiff(git, state);
+      final diffs = StringBuffer();
+      final recent = <IdeGitCommit>[];
+      String? branch;
+
+      for (final git in gits) {
+        final state = git.state!;
+        diffs.write(await _commitDiff(git, state));
+        branch ??= state.head.branch;
+        if (recent.isEmpty && !state.head.unborn) {
+          recent.addAll(await git.service.log(limit: 10));
+        }
+      }
+
       if (cancel.isCompleted) return;
+      final diff = diffs.toString();
       if (diff.trim().isEmpty) {
         widget.notifications.notify(
           IdeSeverity.info,
@@ -1519,22 +1547,26 @@ class IdeGitCommitPanelState extends State<IdeGitCommitPanel>
         );
         return;
       }
-      final recent = state.head.unborn
-          ? const <IdeGitCommit>[]
-          : await git.service.log(limit: 10);
       final message = await model(
         ideCommitMessagePrompt(
           diff,
           recentMessages: [for (final commit in recent) commit.message],
-          branch: state.head.branch,
+          branch: branch,
         ),
         cancel: cancel.future,
       );
       if (cancel.isCompleted || message.isEmpty) return;
-      _session.message.value = TextEditingValue(
+      final value = TextEditingValue(
         text: message,
         selection: TextSelection.collapsed(offset: message.length),
       );
+      _session.message.value = value;
+      for (final git in targetGits) {
+        _sessionOf(git).message.value = value;
+      }
+      if (targetGits.length == 1 && !identical(targetGits.first, _git)) {
+        widget.host.selectRepository(targetGits.first);
+      }
     } on IdeCommitMessageCancelled {
       // Cancelled: the message stays as it was.
     } catch (error) {

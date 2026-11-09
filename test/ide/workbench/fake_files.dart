@@ -55,10 +55,7 @@ class TreeFiles implements IdeFileService {
       for (final MapEntry(key: path, value: isDirectory) in children.entries)
         IdeFile(path, p.basename(path), isDirectory: isDirectory),
     ];
-    entries.sort((a, b) {
-      if (a.isDirectory != b.isDirectory) return a.isDirectory ? -1 : 1;
-      return a.name.compareTo(b.name);
-    });
+    entries.sort(ideCompareFiles);
     return entries;
   }
 

@@ -1761,6 +1761,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sidebarByStatus => '按状态';
 
   @override
+  String get sidebarProjectSortRecent => '最近活动';
+
+  @override
+  String get sidebarProjectSortManual => '手动';
+
+  @override
   String get sidebarTimeNow => '刚刚';
 
   @override
@@ -2226,6 +2232,14 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get chatAgentMessageSent => '发来消息';
+
+  @override
+  String chatAgentMessageSemantics(String agent) {
+    return '来自子智能体 $agent 的消息';
+  }
+
+  @override
   String get chatOpensItsConversation => '打开其对话';
 
   @override
@@ -2591,6 +2605,11 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String turnWorked(String duration) {
     return '已处理 $duration';
+  }
+
+  @override
+  String turnStopped(String duration) {
+    return '处理 $duration 后停止';
   }
 
   @override
@@ -4902,6 +4921,11 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String wbSelectedLines(int lines, int count) {
+    return '(已选择 $lines 行，$count 个字符)';
+  }
+
+  @override
   String get wbGoToLineColumn => '转到行/列';
 
   @override
@@ -6645,7 +6669,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get modelsRoleSubagentDescription =>
-      'CLAUDE_CODE_SUBAGENT_MODEL：所有子 Agent 使用的模型，优先于子 Agent 定义或调用时指定的模型（定义为 inherit 的除外）。';
+      'CLAUDE_CODE_SUBAGENT_MODEL：所有子 Agent 使用的模型，包括内置的 Explore、Plan 和定义为 inherit 的，优先于子 Agent 定义或调用时指定的模型。';
 
   @override
   String get modelsRoleMissing => '这个模型已不在它的上游里，用到它的请求会失败。';
@@ -9703,6 +9727,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get browserSettingsAppOld => '扩展比当前的 BaoCode 新，请更新 BaoCode。';
 
   @override
+  String get browserSettingsNoFileAccess => '没有开文件访问权限';
+
+  @override
+  String get browserSettingsNoFileAccessDescription =>
+      '打不开本地 HTML，也传不了文件。在 chrome://extensions 里点 BaoCode 的「详细信息」，打开「允许访问文件网址」。';
+
+  @override
   String get browserSettingsInstall => '安装扩展';
 
   @override
@@ -11010,6 +11041,18 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get diffUnified => '单栏查看';
+
+  @override
+  String get gitDetailsLayout => '详情位置';
+
+  @override
+  String get gitDetailsLayoutAuto => '够宽时在右侧';
+
+  @override
+  String get gitDetailsLayoutBeside => '右侧';
+
+  @override
+  String get gitDetailsLayoutBelow => '下方';
 
   @override
   String get diffIgnoreWhitespace => '忽略行首尾空白';
@@ -12432,6 +12475,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get ustatSpaceEmpty => '暂无数据';
+
+  @override
+  String get ustatLoading => '正在读取调用记录…';
 
   @override
   String get ustatClearEllipsis => '清理…';

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:baocode/ide/git/ide_git_commit_panel.dart';
 import 'package:baocode/ide/git/commit_message.dart';
+import 'package:baocode/ide/git/repository_scan.dart';
 import 'package:baocode/ide/ide_input.dart';
 import 'package:baocode/ide/ide_list.dart';
 
@@ -140,11 +141,16 @@ void main() {
       return pending.future;
     }
 
-    Future<void> pumpScm(WidgetTester tester) async {
+    Future<void> pumpScm(
+      WidgetTester tester, {
+      IdeRepositoryDetection? repositoryDetection,
+      Map<String, String>? files,
+    }) async {
       await pumpWorkbench(
         tester,
-        const {'lib/a.dart': 'a', 'notes.md': 'n'},
+        files ?? const {'lib/a.dart': 'a', 'notes.md': 'n'},
         git: git.repository(),
+        repositoryDetection: repositoryDetection,
         commitMessage: model,
       );
       await tester.pumpAndSettle();
@@ -254,5 +260,35 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Claude Code is not installed'), findsOneWidget);
     });
+
+    testWidgets(
+      'generates commit message for checked files in sub-repository when primary has none',
+      (tester) async {
+        git.status = '## main\x00';
+        git.diff = '';
+        final sub = FakeGit(inRoot('sub'))
+          ..status = '## feature\x00 M sub.dart\x00'
+          ..diff = fileDiff('sub.dart')
+          ..log = gitLogRecord('c1', [], 'feat: sub commit');
+        sub.refs['HEAD'] = 'c1';
+
+        await pumpScm(
+          tester,
+          repositoryDetection: IdeRepositoryDetection(
+            find: (_) async => [inRoot('sub')],
+            open: (_) => sub.repository(),
+          ),
+          files: const {'lib/a.dart': 'a', 'sub/sub.dart': 'b'},
+        );
+
+        await tester.tap(find.byTooltip('Generate Commit Message'));
+        await tester.pumpAndSettle();
+
+        expect(input(tester), 'Update a and add notes');
+        final prompt = prompts.single;
+        expect(prompt.user, startsWith('Branch: feature\n'));
+        expect(prompt.user, contains('M sub.dart (+3 -3)'));
+      },
+    );
   });
 }

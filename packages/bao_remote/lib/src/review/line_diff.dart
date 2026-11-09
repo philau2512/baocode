@@ -52,12 +52,12 @@ List<LineHunk> diffLines(
   int maxEdits = 2000,
 }) {
   var start = 0;
-  while (start < a.length && start < b.length && a[start] == b[start]) {
+  while (start < a.length && start < b.length && _sameLine(a[start], b[start])) {
     start++;
   }
   var aEnd = a.length;
   var bEnd = b.length;
-  while (aEnd > start && bEnd > start && a[aEnd - 1] == b[bEnd - 1]) {
+  while (aEnd > start && bEnd > start && _sameLine(a[aEnd - 1], b[bEnd - 1])) {
     aEnd--;
     bEnd--;
   }
@@ -70,10 +70,10 @@ List<LineHunk> diffLines(
   final xs = Int32List(aEnd - start);
   final ys = Int32List(bEnd - start);
   for (var i = 0; i < xs.length; i++) {
-    xs[i] = ids.putIfAbsent(a[start + i], () => ids.length);
+    xs[i] = ids.putIfAbsent(_normalizeEol(a[start + i]), () => ids.length);
   }
   for (var i = 0; i < ys.length; i++) {
-    ys[i] = ids.putIfAbsent(b[start + i], () => ids.length);
+    ys[i] = ids.putIfAbsent(_normalizeEol(b[start + i]), () => ids.length);
   }
   final hunks = _myers(xs, ys, maxEdits);
   if (hunks == null) return [LineHunk(start, aEnd, start, bEnd)];
@@ -87,6 +87,13 @@ List<LineHunk> diffLines(
       ),
   ];
 }
+
+String _normalizeEol(String s) => s.endsWith('\r\n')
+    ? '${s.substring(0, s.length - 2)}\n'
+    : (s.endsWith('\r') ? '${s.substring(0, s.length - 1)}\n' : s);
+
+bool _sameLine(String a, String b) =>
+    a == b || _normalizeEol(a) == _normalizeEol(b);
 
 /// The stretches where [a] and [b] differ; null past [maxEdits].
 List<LineHunk>? _myers(Int32List a, Int32List b, int maxEdits) {
@@ -243,7 +250,7 @@ Uint8List? merge3(List<int> mine, List<int> base, List<int> theirs) {
 bool _sameLines(List<String> a, List<String> b) {
   if (a.length != b.length) return false;
   for (var i = 0; i < a.length; i++) {
-    if (a[i] != b[i]) return false;
+    if (!_sameLine(a[i], b[i])) return false;
   }
   return true;
 }

@@ -3,7 +3,7 @@
 
 **English** · [简体中文](README_CN.md) · [日本語](README_JA.md) · [Français](README_FR.md) · [Español](README_ES.md)
 
-An awesome, easy-to-use desktop UI for [Claude Code](https://github.com/anthropics/claude-code), with a millisecond-fast IDE built in.
+An awesome, easy-to-use desktop UI for [Claude Code](https://github.com/anthropics/claude-code), with a millisecond-fast IDE built in. <!-- test-edit: ok -->
 
 [Website](https://baocode.dev) · [Download](https://baocode.dev/download) · [Changelog](https://baocode.dev/changelog)
 
@@ -95,3 +95,5 @@ own licenses, found next to them in the source tree.
 
 BaoCode is an independent project, not affiliated with or endorsed by
 Anthropic.
+<!-- test edit -->
+

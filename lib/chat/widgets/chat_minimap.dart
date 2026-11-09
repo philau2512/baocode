@@ -456,7 +456,10 @@ class _ChatMinimapState extends State<ChatMinimap>
     if (!_aimTop.isNaN && !_showing && widget.scrolling()) _showSoon();
     _aimTop = top;
     _aimBottom = bottom;
-    if (_top.isNaN || _dragged || _still) {
+    if (_top.isNaN ||
+        _dragged ||
+        _still ||
+        (_reveal.value == 0 && !_hovered && !widget.scrolling())) {
       _settle();
     } else if (!_ticker.isActive) {
       _lastTick = Duration.zero;

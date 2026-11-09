@@ -85,42 +85,6 @@ std::optional<WPARAM> CommandForButton(HWND window, LRESULT part) {
   }
 }
 
-// Tells the engine behind |view| of the Alt and Windows keys let go while
-// another window had the keyboard. The engine brings Shift and Control in
-// line with every pointer event, but these only with the next key: the Alt
-// of an Alt+Tab, released in the window switched to, would stay pressed for
-// Flutter — in every window, they share the one engine — and each click in
-// the editor would add a cursor (an Alt+click) and select nothing. The
-// release is told as the key's own would be, as the engine does for a
-// Control it forges (see its KeyboardManager); one of a key it does not hold
-// is let go of there. An Alt's own is a WM_SYSKEYUP, and it must be: the
-// engine hands a WM_KEYUP the framework leaves alone back to the view, whose
-// default procedure takes a lone Alt let go for the window menu's — the
-// window would sit in menu mode, its next key lost and its frames stalled
-// until a click. A WM_SYSKEYUP the engine neither hands back nor lets reach
-// the default procedure.
-void ReleaseModifiersLetGoElsewhere(HWND view) {
-  for (const int key : {VK_LMENU, VK_RMENU, VK_LWIN, VK_RWIN}) {
-    if (::GetAsyncKeyState(key) & 0x8000) {
-      continue;
-    }
-    // 0xE0 in the high byte for the extended keys (the right Alt, the
-    // Windows keys), which is how the engine tells the sides apart.
-    const UINT scancode =
-        ::MapVirtualKeyW(static_cast<UINT>(key), MAPVK_VK_TO_VSC_EX);
-    if ((scancode & 0xFF) == 0) {
-      continue;
-    }
-    const bool extended = (scancode & 0xFF00) == 0xE000;
-    const LPARAM lparam = static_cast<LPARAM>(
-        1 /* repeat count */ | ((scancode & 0xFF) << 16) |
-        (extended ? 1u << 24 : 0u) | (1u << 30) /* was down */ |
-        (1u << 31) /* going up */);
-    const bool alt = key == VK_LMENU || key == VK_RMENU;
-    ::SendMessageW(view, alt ? WM_SYSKEYUP : WM_KEYUP,
-                   static_cast<WPARAM>(alt ? VK_MENU : key), lparam);
-  }
-}
 
 // The bits of a key or character message's lparam that name the key: its
 // scancode (16-23) and whether it is an extended one (24).
@@ -134,6 +98,28 @@ bool IsKeyMessage(UINT message) {
 bool IsCharMessage(UINT message) {
   return message == WM_CHAR || message == WM_SYSCHAR ||
          message == WM_DEADCHAR || message == WM_SYSDEADCHAR;
+}
+
+// Modifier state is part of the keyboard event protocol. A synthetic
+// scancode for one can make Flutter receive (for example) Alt down without
+// its Alt modifier flag, which leaves its pressed-key state inconsistent.
+bool IsModifierKey(WPARAM virtual_key) {
+  switch (virtual_key) {
+    case VK_SHIFT:
+    case VK_LSHIFT:
+    case VK_RSHIFT:
+    case VK_CONTROL:
+    case VK_LCONTROL:
+    case VK_RCONTROL:
+    case VK_MENU:
+    case VK_LMENU:
+    case VK_RMENU:
+    case VK_LWIN:
+    case VK_RWIN:
+      return true;
+    default:
+      return false;
+  }
 }
 
 // The scancode bits a keyboard would have given the key message of
@@ -280,6 +266,15 @@ LRESULT CALLBACK ViewWindow::ViewProc(HWND hwnd, UINT const message,
     }
   }
 
+  // An IME owns character messages while composing. Do not assign them a
+  // physical key's scancode: Flutter uses that pairing for raw keyboard input,
+  // which breaks Vietnamese Telex/VNI composition under the custom view proc.
+  if (that != nullptr && message == WM_IME_STARTCOMPOSITION) {
+    that->ime_composing_ = true;
+  } else if (that != nullptr && message == WM_IME_ENDCOMPOSITION) {
+    that->ime_composing_ = false;
+  }
+
   // Keys another app sends with SendInput may come without a scancode — the
   // Control+V the clipboard history (Win+V) pastes an entry with, those of
   // remote desktops and of key remappers. The engine tells keys apart by
@@ -292,15 +287,29 @@ LRESULT CALLBACK ViewWindow::ViewProc(HWND hwnd, UINT const message,
   // to the character it comes with.
   LPARAM key_lparam = lparam;
   if (that != nullptr && IsKeyMessage(message) &&
-      (lparam & kScancodeBits) == 0 && wparam != VK_PACKET) {
+      !IsModifierKey(wparam) && (lparam & kScancodeBits) == 0 &&
+      wparam != VK_PACKET) {
     key_lparam = lparam | ScancodeBitsOf(wparam);
   }
   if (that != nullptr &&
       (message == WM_KEYDOWN || message == WM_SYSKEYDOWN)) {
     that->key_down_scancode_bits_ = key_lparam & kScancodeBits;
+    if (wparam == VK_MENU || wparam == VK_LMENU || wparam == VK_RMENU) {
+      that->alt_down_ = true;
+    } else if (wparam == VK_LWIN || wparam == VK_RWIN) {
+      that->win_down_ = true;
+    }
+  } else if (that != nullptr &&
+             (message == WM_KEYUP || message == WM_SYSKEYUP)) {
+    if (wparam == VK_MENU || wparam == VK_LMENU || wparam == VK_RMENU) {
+      that->alt_down_ = false;
+    } else if (wparam == VK_LWIN || wparam == VK_RWIN) {
+      that->win_down_ = false;
+    }
   }
   if (that != nullptr && IsCharMessage(message) &&
-      (lparam & kScancodeBits) == 0) {
+      !that->ime_composing_ && (lparam & kScancodeBits) == 0 &&
+      wparam < 0x80) {
     key_lparam = lparam | that->key_down_scancode_bits_;
   }
 
@@ -442,9 +451,7 @@ ViewWindow::MessageHandler(HWND hwnd, UINT const message,
 
     case WM_ACTIVATE:
       if (LOWORD(wparam) != WA_INACTIVE) {
-        if (view_ != nullptr) {
-          ReleaseModifiersLetGoElsewhere(view_);
-        }
+        ReleaseModifiersLetGoElsewhere();
         if (observer_ != nullptr) {
           observer_->WindowActivated(view_id_);
         }
@@ -481,3 +488,39 @@ std::optional<LRESULT> ViewWindow::WindowPart(POINT point) const {
   }
   return std::nullopt;
 }
+
+void ViewWindow::ReleaseModifiersLetGoElsewhere() {
+  if (view_ == nullptr) {
+    return;
+  }
+  for (const int key : {VK_LMENU, VK_RMENU, VK_LWIN, VK_RWIN}) {
+    const bool alt = key == VK_LMENU || key == VK_RMENU;
+    const bool was_down = alt ? alt_down_ : win_down_;
+    if (!was_down) {
+      continue;
+    }
+    if (::GetAsyncKeyState(key) & 0x8000) {
+      continue;
+    }
+    // 0xE0 in the high byte for the extended keys (the right Alt, the
+    // Windows keys), which is how the engine tells the sides apart.
+    const UINT scancode =
+        ::MapVirtualKeyW(static_cast<UINT>(key), MAPVK_VK_TO_VSC_EX);
+    if ((scancode & 0xFF) == 0) {
+      continue;
+    }
+    const bool extended = (scancode & 0xFF00) == 0xE000;
+    const LPARAM lparam = static_cast<LPARAM>(
+        1 /* repeat count */ | ((scancode & 0xFF) << 16) |
+        (extended ? 1u << 24 : 0u) | (1u << 30) /* was down */ |
+        (1u << 31) /* going up */);
+    ::SendMessageW(view_, alt ? WM_SYSKEYUP : WM_KEYUP,
+                   static_cast<WPARAM>(alt ? VK_MENU : key), lparam);
+    if (alt) {
+      alt_down_ = false;
+    } else {
+      win_down_ = false;
+    }
+  }
+}
+

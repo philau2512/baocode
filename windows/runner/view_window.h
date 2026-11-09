@@ -107,6 +107,20 @@ class ViewWindow : public Win32Window {
   // for the character messages that follow one sent without them.
   LPARAM key_down_scancode_bits_ = 0;
 
+  // An IME owns the character messages while it composes text. They must keep
+  // their original lParam: adding the preceding physical key's scancode makes
+  // Flutter treat Vietnamese Telex/VNI composition as ordinary key input.
+  bool ime_composing_ = false;
+
+  // Tells the engine behind |view_| of the Alt and Windows keys let go while
+  // another window had the keyboard.
+  void ReleaseModifiersLetGoElsewhere();
+
+  // Track modifier keys held down in this view so activation only releases
+  // them if they were actually pressed down before focus was lost.
+  bool alt_down_ = false;
+  bool win_down_ = false;
+
   // Who is told what happens to the window, and as which.
   WindowObserver* observer_ = nullptr;
   int64_t view_id_ = 0;

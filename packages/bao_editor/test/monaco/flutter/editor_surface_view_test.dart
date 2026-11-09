@@ -716,13 +716,19 @@ void main() {
       const TextSelection.collapsed(offset: 0),
     );
 
-    // Clicking the track below the slider pages down by one viewport.
+    // Clicking the track below the slider jumps to the clicked position,
+    // centering the slider under the pointer.
+    final clickPosition = track.height - 3;
     await _click(
       tester,
       origin + Offset(track.center.dx, track.bottom - 3),
       at: const Duration(seconds: 1),
     );
-    expect(_gutter(tester).scrollTop, closeTo(dragged + 300, 0.5));
+    final afterClick = _painter<EditorScrollbarPainter>(tester).vertical;
+    expect(
+      _gutter(tester).scrollTop,
+      closeTo(afterClick.scrollForClick(clickPosition), 0.5),
+    );
     expect(tester.takeException(), isNull);
   });
 

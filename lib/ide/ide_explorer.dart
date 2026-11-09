@@ -328,6 +328,7 @@ class IdeExplorerController extends ChangeNotifier {
     return _loads[directory] ??= () async {
       try {
         final entries = await files.list(directory);
+        entries.sort(ideCompareFiles);
         _children[directory] = entries;
         _errors.remove(directory);
       } catch (error) {

@@ -15,7 +15,12 @@
 
 import 'package:path/path.dart' as p;
 
+import 'package:bao_remote/files.dart';
+
 import 'git_model.dart';
+
+export 'package:bao_remote/files.dart'
+    show IdeFileNameKey, ideCompareFileNames, ideCompareFiles;
 
 /// A node of the tree: a folder or a changed file.
 sealed class IdeScmTreeNode {
@@ -135,50 +140,3 @@ void _sortNodes(List<IdeScmTreeNode> nodes) {
     nodes[i] = keyed[i].$1;
   }
 }
-
-/// A name as [ideCompareFileNames] compares it: its runs of digits and of
-/// other characters, lowercased, the digits' values; for sorting many names,
-/// each split once.
-class IdeFileNameKey implements Comparable<IdeFileNameKey> {
-  IdeFileNameKey(this.name) {
-    // Its runs of ASCII digits and of anything else (`\d+|\D+`).
-    final lower = name.toLowerCase();
-    var start = 0;
-    while (start < lower.length) {
-      final digits = _isDigit(lower.codeUnitAt(start));
-      var end = start + 1;
-      while (end < lower.length && _isDigit(lower.codeUnitAt(end)) == digits) {
-        end++;
-      }
-      final part = lower.substring(start, end);
-      parts.add(part);
-      numbers.add(digits ? int.tryParse(part) : null);
-      start = end;
-    }
-  }
-
-  static bool _isDigit(int unit) => unit >= 0x30 && unit <= 0x39;
-
-  final String name;
-  final List<String> parts = [];
-  final List<int?> numbers = [];
-
-  @override
-  int compareTo(IdeFileNameKey other) {
-    for (var i = 0; i < parts.length && i < other.parts.length; i++) {
-      final x = numbers[i];
-      final y = other.numbers[i];
-      final order = x != null && y != null
-          ? x.compareTo(y)
-          : parts[i].compareTo(other.parts[i]);
-      if (order != 0) return order;
-    }
-    final order = parts.length.compareTo(other.parts.length);
-    return order != 0 ? order : name.compareTo(other.name);
-  }
-}
-
-/// `compareFileNames`: case-insensitive, numbers by value (`file2` before
-/// `file10`), then by case.
-int ideCompareFileNames(String a, String b) =>
-    IdeFileNameKey(a).compareTo(IdeFileNameKey(b));

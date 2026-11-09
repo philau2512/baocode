@@ -316,7 +316,18 @@ class ChangeReview extends ChangeNotifier {
           final mode? when mode != '120000' => mode,
           _ => '100644',
         };
-        return (base: await _store.store(utf8.encode(text), mode: mode));
+        var encoded = text;
+        if (now != null) {
+          try {
+            final currentBytes = await _store.read(now);
+            final currentSample =
+                latin1.decode(currentBytes.take(4096).toList());
+            if (currentSample.contains('\r\n') && !text.contains('\r\n')) {
+              encoded = text.replaceAll('\r\n', '\n').replaceAll('\n', '\r\n');
+            }
+          } catch (_) {}
+        }
+        return (base: await _store.store(utf8.encode(encoded), mode: mode));
       case OriginalByPatch() || OriginalByEdits():
         final after = await _store.take(path);
         if (after == null || after.isLink) return null;

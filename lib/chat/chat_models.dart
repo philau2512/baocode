@@ -14,10 +14,16 @@ class UserMessageItem extends ChatItem {
     this.images = const [],
     this.worked,
     this.usage,
+    this.stopped = false,
     this.sentAt,
+    this.fromAgent,
   });
 
   final String text;
+
+  /// Sent by a subagent (SendMessage), not typed: what it was given to do,
+  /// else its id. Shown as its, and not to be edited.
+  final String? fromAgent;
 
   /// Pictures sent with it (screenshots, mockups…).
   final List<ImageAttachment> images;
@@ -29,22 +35,31 @@ class UserMessageItem extends ChatItem {
   /// back until then.
   final bool queued;
 
-  /// How long the agent worked on it, once its turn ended as it should
-  /// (not stopped): the work before its answer folds into that.
+  /// How long the agent worked on it, once its turn ended: the work before
+  /// its answer folds into that.
   final Duration? worked;
 
   /// What its turn spent, kept with [worked], when the kernel said.
   final TurnUsage? usage;
 
-  UserMessageItem copyWith({Duration? worked, TurnUsage? usage}) =>
-      UserMessageItem(
-        text: text,
-        queued: queued,
-        images: images,
-        worked: worked ?? this.worked,
-        usage: usage ?? this.usage,
-        sentAt: sentAt,
-      );
+  /// The user stopped its turn, [worked] in: all its work folds, an answer
+  /// or not.
+  final bool stopped;
+
+  UserMessageItem copyWith({
+    Duration? worked,
+    TurnUsage? usage,
+    bool? stopped,
+  }) => UserMessageItem(
+    text: text,
+    queued: queued,
+    images: images,
+    worked: worked ?? this.worked,
+    usage: usage ?? this.usage,
+    stopped: stopped ?? this.stopped,
+    sentAt: sentAt,
+    fromAgent: fromAgent,
+  );
 }
 
 /// What a turn spent, as its kernel reported at its end.
@@ -509,6 +524,7 @@ class CodeDiffItem extends ChatItem {
 class LiveStatusItem extends ChatItem {
   const LiveStatusItem(
     this.label, {
+    this.brand,
     this.whimsical = false,
     this.visible = true,
     this.output,
@@ -517,6 +533,9 @@ class LiveStatusItem extends ChatItem {
   });
 
   final String label;
+
+  /// The provider mark beside this status, when it has a branded identity.
+  final String? brand;
 
   /// Whether the wait has nothing to name (the model yet to answer, not a
   /// chore like compacting): the row may muse rather than say [label].
@@ -694,13 +713,21 @@ final class OriginalByEdits extends FileOriginal {
   /// The text before them, from [text] as they left it; null where it
   /// cannot be told.
   String? undo(String text) {
+    final isCrlf = text.contains('\r\n');
+    var normalized = isCrlf ? text.replaceAll('\r\n', '\n') : text;
     for (final edit in edits.reversed) {
       if (edit.after.isEmpty) return null;
-      final at = text.indexOf(edit.after);
-      if (at < 0 || text.indexOf(edit.after, at + 1) >= 0) return null;
-      text = text.replaceRange(at, at + edit.after.length, edit.before);
+      final normAfter = edit.after.replaceAll('\r\n', '\n');
+      final normBefore = edit.before.replaceAll('\r\n', '\n');
+      final at = normalized.indexOf(normAfter);
+      if (at < 0 || normalized.indexOf(normAfter, at + 1) >= 0) return null;
+      normalized = normalized.replaceRange(
+        at,
+        at + normAfter.length,
+        normBefore,
+      );
     }
-    return text;
+    return isCrlf ? normalized.replaceAll('\n', '\r\n') : normalized;
   }
 }
 
