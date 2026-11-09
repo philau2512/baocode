@@ -55,6 +55,7 @@ final class AgyTranslator {
   final Map<String, List<ChatItem>> _agentChildren = {};
   final Map<String, String> _agentParents = {};
   final Map<String, KernelTask> _tasks = {};
+  final Map<String, AgyTaskInfo> _taskInfos = {};
   final Map<String, String> _interactionTools = {};
 
   String? conversationId;
@@ -265,6 +266,40 @@ final class AgyTranslator {
       );
       return;
     }
+    final taskMatch = RegExp(
+      r'with task id:\s*([^\s\n]+)',
+      caseSensitive: false,
+    ).firstMatch(output ?? '');
+    if (taskMatch != null) {
+      final fullId = taskMatch.group(1)!.trim();
+      final shortId = _shortTaskId(fullId);
+      final descMatch = RegExp(
+        r'Task Description:\s*([^\n]+)',
+        caseSensitive: false,
+      ).firstMatch(output ?? '');
+      final desc = descMatch?.group(1)?.trim();
+      final isSchedule = name.toLowerCase() == 'schedule';
+      final summary = _string(parameters['toolSummary']) ??
+          (isSchedule ? _string(parameters['Prompt']) : null) ??
+          desc;
+      final cmd = _string(parameters['CommandLine']) ??
+          _string(parameters['command']) ??
+          (!isSchedule ? desc : null);
+      final prompt = _string(parameters['Prompt']) ??
+          _string(parameters['prompt']);
+      final duration = _string(parameters['DurationSeconds']) ??
+          _string(parameters['duration_seconds']);
+      final info = AgyTaskInfo(
+        id: fullId,
+        summary: summary,
+        command: cmd,
+        prompt: prompt,
+        duration: duration != null ? '${duration}s' : null,
+        kind: isSchedule ? 'timer' : 'command',
+      );
+      _taskInfos[fullId] = info;
+      _taskInfos[shortId] = info;
+    }
     final parsedOutput = AgyOutputParser.parse(output);
     final mcp = kind == ToolKind.mcp || _isPluginTool(name)
         ? AgyMcpPluginParser.parse(name, parameters)
@@ -274,6 +309,7 @@ final class AgyTranslator {
       parameters,
       output: output,
       running: !done && !failed,
+      taskLookup: (tid) => _taskInfos[tid],
     );
     final isFilePath = path != null &&
         (kind == ToolKind.read ||
@@ -401,9 +437,14 @@ final class AgyTranslator {
       _string(input['task_id']) ??
       _string(input['conversation_id']) ??
       RegExp(
-        r'(?:Task ID|Task):\s*([^\s]+)',
+        r'(?:with task id|task id|Task ID|Task):\s*([^\s]+)',
         caseSensitive: false,
       ).firstMatch(output ?? '')?.group(1);
+
+  static String _shortTaskId(String id) {
+    final slash = id.lastIndexOf('/');
+    return slash >= 0 && slash < id.length - 1 ? id.substring(slash + 1) : id;
+  }
 
   static KernelTask _task(
     String id,

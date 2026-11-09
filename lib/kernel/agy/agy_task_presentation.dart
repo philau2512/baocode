@@ -10,6 +10,54 @@ final class AgyTaskToolInfo {
   final String? detail;
 }
 
+/// Metadata about a background task or scheduled timer discovered during execution.
+final class AgyTaskInfo {
+  const AgyTaskInfo({
+    required this.id,
+    this.summary,
+    this.command,
+    this.prompt,
+    this.duration,
+    this.kind = 'task',
+  });
+
+  final String id;
+  final String? summary;
+  final String? command;
+  final String? prompt;
+  final String? duration;
+  final String kind;
+
+  String get shortId {
+    final slash = id.lastIndexOf('/');
+    return slash >= 0 && slash < id.length - 1 ? id.substring(slash + 1) : id;
+  }
+
+  String get displayTitle {
+    if (summary != null && summary!.trim().isNotEmpty) return summary!.trim();
+    if (command != null && command!.trim().isNotEmpty) {
+      return _cleanCommand(command!.trim());
+    }
+    if (prompt != null && prompt!.trim().isNotEmpty) return prompt!.trim();
+    return shortId;
+  }
+
+  static String _cleanCommand(String cmd) {
+    var c = cmd.trim();
+    if (c.startsWith('"') && c.endsWith('"') && c.length >= 2) {
+      c = c.substring(1, c.length - 1).trim();
+    }
+    final cdMatch = RegExp(r'^cd\s+[^\s&]+\s*&&\s*(.*)$').firstMatch(c);
+    if (cdMatch != null) {
+      c = cdMatch.group(1)!.trim();
+    }
+    if (c.length > 55) {
+      return '${c.substring(0, 52)}...';
+    }
+    return c;
+  }
+}
+
 /// Normalizes AGY schedule, manage_task, and manage_subagents tool calls into
 /// readable presentation titles and details.
 final class AgyTaskPresentation {
@@ -18,13 +66,21 @@ final class AgyTaskPresentation {
     Map<String, Object?> input, {
     String? output,
     bool running = false,
+    AgyTaskInfo? Function(String taskId)? taskLookup,
+    AgyTaskInfo? taskInfo,
   }) {
     final lower = name.toLowerCase();
     if (lower == 'schedule') {
       return _parseSchedule(input, running: running);
     }
     if (lower == 'manage_task') {
-      return _parseManageTask(input, output: output, running: running);
+      return _parseManageTask(
+        input,
+        output: output,
+        running: running,
+        taskLookup: taskLookup,
+        taskInfo: taskInfo,
+      );
     }
     if (lower == 'manage_subagents') {
       return _parseManageSubagents(input, running: running);
@@ -61,6 +117,8 @@ final class AgyTaskPresentation {
     Map<String, Object?> input, {
     String? output,
     required bool running,
+    AgyTaskInfo? Function(String taskId)? taskLookup,
+    AgyTaskInfo? taskInfo,
   }) {
     final action =
         _clean(input['Action'] ?? input['action'])?.toLowerCase() ?? 'manage';
@@ -68,15 +126,46 @@ final class AgyTaskPresentation {
     final shortTaskId = taskIdRaw != null ? _shortTaskId(taskIdRaw) : null;
     final taskInput = _clean(input['Input'] ?? input['input']);
 
+    final resolvedTask = taskInfo ??
+        (shortTaskId != null ? taskLookup?.call(shortTaskId) : null) ??
+        (taskIdRaw != null ? taskLookup?.call(taskIdRaw) : null);
+
+    final isTimer = resolvedTask?.kind == 'timer' ||
+        (resolvedTask?.prompt != null && resolvedTask!.prompt!.isNotEmpty);
+    final isCommand = resolvedTask?.kind == 'command' ||
+        (resolvedTask?.command != null && resolvedTask!.command!.isNotEmpty);
+
     final String label = switch (action) {
-      'status' => running ? 'Checking task' : 'Checked task',
-      'kill' => running ? 'Stopping task' : 'Stopped task',
+      'status' => isTimer
+          ? (running ? 'Checking timer' : 'Checked timer')
+          : (running ? 'Checking task' : 'Checked task'),
+      'kill' => isTimer
+          ? (running ? 'Cancelling timer' : 'Cancelled timer')
+          : (isCommand
+              ? (running ? 'Stopping command' : 'Stopped command')
+              : (running ? 'Stopping task' : 'Stopped task')),
       'list' => running ? 'Listing tasks' : 'Listed tasks',
       'send_input' => running ? 'Sending input' : 'Sent input',
       _ => 'Task',
     };
 
-    final target = shortTaskId ?? (action == 'list' ? 'background tasks' : 'task');
+    final String target;
+    if (action == 'list') {
+      target = 'background tasks';
+    } else if (resolvedTask != null) {
+      if (isTimer) {
+        final prompt = resolvedTask.prompt ?? resolvedTask.displayTitle;
+        final dur = resolvedTask.duration;
+        target = dur != null ? '$prompt ($dur)' : prompt;
+      } else {
+        final title = resolvedTask.displayTitle;
+        final sid = shortTaskId ?? resolvedTask.shortId;
+        target = title != sid ? '$title ($sid)' : title;
+      }
+    } else {
+      target = shortTaskId ?? 'task';
+    }
+
     String? detail;
     if (output != null && output.isNotEmpty) {
       detail = _statusFromOutput(output);

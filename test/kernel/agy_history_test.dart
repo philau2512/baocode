@@ -260,4 +260,115 @@ void main() {
     expect(manage.target, 'task-154');
     expect(manage.detail, 'running');
   });
+
+  test('resolves contextual task names for background commands and cancelled timers', () async {
+    final dir = await Directory.systemTemp.createTemp('agy-history-task-resolved');
+    addTearDown(() => dir.delete(recursive: true));
+    final file = File('${dir.path}\\transcript.jsonl');
+    await file.writeAsString([
+      jsonEncode({
+        'step_index': 0,
+        'type': 'PLANNER_RESPONSE',
+        'tool_calls': [
+          {
+            'id': 'cmd-1',
+            'name': 'run_command',
+            'args': {
+              'CommandLine': 'cd sea-turtle && .\\gradlew.bat testClasses',
+              'toolSummary': 'Run gradle testClasses to verify',
+            },
+          },
+        ],
+      }),
+      jsonEncode({
+        'step_index': 1,
+        'type': 'GENERIC',
+        'content':
+            'Created At: now\nTool is running as a background task with task id: conv-1/task-150\nTask Description: cd sea-turtle && .\\gradlew.bat testClasses',
+      }),
+      jsonEncode({
+        'step_index': 2,
+        'type': 'PLANNER_RESPONSE',
+        'tool_calls': [
+          {
+            'id': 'check-status-1',
+            'name': 'manage_task',
+            'args': {
+              'Action': 'status',
+              'TaskId': 'conv-1/task-150',
+            },
+          },
+        ],
+      }),
+      jsonEncode({
+        'step_index': 3,
+        'type': 'GENERIC',
+        'content': 'Task: conv-1/task-150\nStatus: RUNNING\nLog: file:///task.log',
+      }),
+      jsonEncode({
+        'step_index': 4,
+        'type': 'PLANNER_RESPONSE',
+        'tool_calls': [
+          {
+            'id': 'timer-1',
+            'name': 'schedule',
+            'args': {
+              'DurationSeconds': '5',
+              'Prompt': 'Check task-150 status',
+            },
+          },
+        ],
+      }),
+      jsonEncode({
+        'step_index': 5,
+        'type': 'GENERIC',
+        'content':
+            'Tool is running as a background task with task id: conv-1/task-154\nTask Description: Timer: 5s, Prompt: Check task-150 status',
+      }),
+      jsonEncode({
+        'step_index': 6,
+        'type': 'PLANNER_RESPONSE',
+        'tool_calls': [
+          {
+            'id': 'kill-timer-1',
+            'name': 'manage_task',
+            'args': {
+              'Action': 'kill',
+              'TaskId': 'conv-1/task-154',
+            },
+          },
+        ],
+      }),
+      jsonEncode({
+        'step_index': 7,
+        'type': 'GENERIC',
+        'content': 'Task "conv-1/task-154" cancelled.',
+      }),
+    ].join('\n'));
+
+    final events = <KernelEvent>[];
+    await AgyHistory(emit: events.add, nextSeq: () => events.length).replay(
+      SessionRecord(
+        id: 'history-task-resolved',
+        title: 'history',
+        updatedAt: DateTime.now(),
+        cwd: dir.path,
+        path: file.path,
+      ),
+    );
+
+    final itemsById = <String, ChatItem>{
+      for (final event in events.whereType<ItemUpserted>())
+        event.id: event.item,
+    };
+
+    final statusItem = itemsById['check-status-1'] as ToolCallItem;
+    expect(statusItem.label, 'Checked task');
+    expect(statusItem.target, 'Run gradle testClasses to verify (task-150)');
+    expect(statusItem.detail, 'running');
+
+    final killTimerItem = itemsById['kill-timer-1'] as ToolCallItem;
+    expect(killTimerItem.label, 'Cancelled timer');
+    expect(killTimerItem.target, 'Check task-150 status (5s)');
+  });
 }

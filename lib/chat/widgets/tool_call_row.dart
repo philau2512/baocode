@@ -215,7 +215,9 @@ class ToolCallRow extends StatelessWidget {
             color: AppColors.textMuted,
           ),
           'manage_task' || 'manage_subagents' => Icon(
-            Icons.task_alt_rounded,
+            label?.toLowerCase().contains('timer') == true
+                ? Icons.schedule_rounded
+                : Icons.task_alt_rounded,
             size: 15,
             color: AppColors.textMuted,
           ),
