@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -51,6 +52,7 @@ final class AntigravityKernel
       readEditSnapshot: _readEditSnapshot,
       readSubagentTranscript: (conversation) =>
           _subagentTranscript.inspect(conversation: conversation),
+      readStepThinking: _readStepThinking,
       onTasksChanged: (tasks) => emit(TasksReported(nextSeq, tasks)),
       sendInteractionAnswer: _sendInteractionAnswer,
       onTurnEnded: (turnId) {
@@ -613,6 +615,67 @@ final class AntigravityKernel
         _turn = null;
       }
     }
+  }
+
+  Future<String?> _readStepThinking(
+    String conversation,
+    Object? stepIndex,
+  ) async {
+    if (conversation.isEmpty) return null;
+    final base = Platform.environment['USERPROFILE'] ??
+        Platform.environment['HOME'];
+    if (base == null) return null;
+    final primary = File(p.join(
+      base,
+      '.gemini',
+      'antigravity-cli',
+      'brain',
+      conversation,
+      '.system_generated',
+      'logs',
+      'transcript.jsonl',
+    ));
+    final fallback = File(p.join(
+      base,
+      '.gemini',
+      'tmp',
+      'brain',
+      conversation,
+      '.system_generated',
+      'logs',
+      'transcript.jsonl',
+    ));
+    final file = await primary.exists()
+        ? primary
+        : await fallback.exists()
+            ? fallback
+            : null;
+    if (file == null) return null;
+
+    try {
+      final lines = await file.readAsLines();
+      for (var i = lines.length - 1; i >= 0; i--) {
+        final line = lines[i].trim();
+        if (line.isEmpty) continue;
+        final json = jsonDecode(line);
+        if (json is! Map) continue;
+        if (stepIndex != null) {
+          if ('${json['step_index']}' == '$stepIndex') {
+            final thinking = json['thinking'] as String?;
+            if (thinking != null && thinking.trim().isNotEmpty) {
+              return thinking.trim();
+            }
+            return null;
+          }
+        } else {
+          final thinking = json['thinking'] as String?;
+          if (thinking != null && thinking.trim().isNotEmpty) {
+            return thinking.trim();
+          }
+        }
+      }
+    } catch (_) {}
+    return null;
   }
 
   static String _imagePrompt(String text, List<String> imagePaths) {

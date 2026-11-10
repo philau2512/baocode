@@ -24,6 +24,7 @@ final class AgyTranslator {
     this.readFile,
     this.readEditSnapshot,
     this.readSubagentTranscript,
+    this.readStepThinking,
     this.onTasksChanged,
     this.sendInteractionAnswer,
   });
@@ -42,6 +43,8 @@ final class AgyTranslator {
   readEditSnapshot;
   final Future<AgySubagentTranscript> Function(String conversation)?
   readSubagentTranscript;
+  final Future<String?> Function(String conversation, Object? stepIndex)?
+  readStepThinking;
   final void Function(List<KernelTask> tasks)? onTasksChanged;
   late final AgyInteractionParser _interactions = AgyInteractionParser(
     emit,
@@ -57,6 +60,7 @@ final class AgyTranslator {
   final Map<String, KernelTask> _tasks = {};
   final Map<String, AgyTaskInfo> _taskInfos = {};
   final Map<String, String> _interactionTools = {};
+  final Set<String> _recordedThinkingSteps = {};
 
   String? conversationId;
   String? turnId;
@@ -106,6 +110,7 @@ final class AgyTranslator {
     _activeToolIds.clear();
     _reportedEditPayloads.clear();
     _beforeFiles.clear();
+    _recordedThinkingSteps.clear();
   }
 
   void accept(Map<String, Object?> message) {
@@ -126,6 +131,12 @@ final class AgyTranslator {
         _string(step['delta_thinking']);
     final thinkingContent = _string(step['thinking']);
 
+    final usage = _map(step['usage']);
+    final thinkingTokens = _int(usage['thinking_tokens']) ??
+        _int(usage['thinkingTokens']) ??
+        _int(usage['thinking_output_tokens']) ??
+        0;
+
     if (thinkingDelta != null && thinkingDelta.isNotEmpty) {
       _thinking(step, thinkingDelta);
     } else if (kind == 'thinking' || kind == 'thought') {
@@ -135,16 +146,14 @@ final class AgyTranslator {
       if (thinkingContent != null && thinkingContent.isNotEmpty && thinkingId == null) {
         _thinking(step, thinkingContent);
         _completeThinking();
+      } else if (thinkingId == null) {
+        _checkAndRecordThinkingFromDisk(step);
       }
       _text(step);
     } else if (kind == 'tool') {
-      if (thinkingContent != null && thinkingContent.isNotEmpty && thinkingId == null) {
-        _thinking(step, thinkingContent);
-        _completeThinking();
-      }
+      _completeThinking();
       _tool(step);
     }
-    final usage = _map(step['usage']);
     if (usage.isNotEmpty) _reportUsage(usage);
   }
 
@@ -176,6 +185,47 @@ final class AgyTranslator {
     thoughtLength = 0;
     _thoughtStartedAt = null;
     _thoughtBuffer.clear();
+  }
+
+  void _checkAndRecordThinkingFromDisk(Map<String, Object?> step) {
+    final stepIndex = step['step_index'];
+    final stepKey = '${stepIndex ?? _thoughtCount}';
+    if (!_recordedThinkingSteps.add(stepKey)) return;
+
+    final convId = conversationId;
+    if (convId == null || convId.isEmpty || readStepThinking == null) return;
+
+    unawaited(() async {
+      var text = await readStepThinking!(convId, stepIndex);
+      if (text == null || text.trim().isEmpty) {
+        await Future.delayed(const Duration(milliseconds: 100));
+        text = await readStepThinking!(convId, stepIndex);
+      }
+      if (text != null && text.trim().isNotEmpty) {
+        _begin();
+        final id = '$turnId:thinking:${stepIndex ?? _thoughtCount++}';
+        final duration = _double(step['duration_seconds']) ??
+            _int(step['duration_seconds'])?.toDouble() ??
+            1.0;
+        final seconds = math.max(1, duration.round());
+        final tokens = math.max(1, (text.length / 3.5).round());
+        final started = DateTime.now().subtract(Duration(seconds: seconds));
+
+        emit(
+          ItemUpserted(
+            nextSeq(),
+            id,
+            ThinkingItem(
+              text: text.trim(),
+              tokens: tokens,
+              seconds: seconds,
+              startedAt: started,
+            ),
+          ),
+        );
+        emit(ItemCompleted(nextSeq(), id));
+      }
+    }());
   }
 
   void _thinking(Map<String, Object?> step, String delta) {
@@ -252,8 +302,14 @@ final class AgyTranslator {
         ? _map(info['parameters'])
         : _map(step['parameters']).isNotEmpty
         ? _map(step['parameters'])
+        : _map(info['args']).isNotEmpty
+        ? _map(info['args'])
+        : _map(step['args']).isNotEmpty
+        ? _map(step['args'])
         : _decodeParameters(step['arguments']) ??
               _decodeParameters(info['arguments']) ??
+              _decodeParameters(step['args']) ??
+              _decodeParameters(info['args']) ??
               const <String, Object?>{};
     final explicitId =
         _string(step['tool_id']) ??
@@ -263,7 +319,8 @@ final class AgyTranslator {
     final stepIndex = _string(step['step_index']);
     final command =
         _string(parameters['CommandLine']) ?? _string(parameters['command']);
-    final path = _string(parameters['Path']) ?? _string(parameters['path']);
+    final rawPath = _string(parameters['Path']) ?? _string(parameters['path']);
+    final path = rawPath != null ? _cleanPath(rawPath) : null;
     final fileKey = path == null ? null : _pathKey(path);
     final scopeKey = '$name:${fileKey ?? command ?? ''}';
 
@@ -546,8 +603,16 @@ final class AgyTranslator {
     return slash >= 0 ? clean.substring(slash + 1) : clean;
   }
 
+  static String _cleanPath(String path) {
+    var p = path.trim();
+    if (p.startsWith('"') && p.endsWith('"') && p.length >= 2) {
+      p = p.substring(1, p.length - 1).trim();
+    }
+    return p;
+  }
+
   static String _pathKey(String path) =>
-      path.replaceAll('\\', '/').toLowerCase();
+      _cleanPath(path).replaceAll('\\', '/').toLowerCase();
 
   static bool _isAgentTool(String name) => const {
     'invoke_subagent',
@@ -799,12 +864,19 @@ final class AgyTranslator {
       after ??= snapshot?.after;
     }
     final payload = _reportedEditPayloads[itemId];
+    final hadExplicitBefore = before != null || payload?.before != null;
     before ??= payload?.before ?? fullBefore;
     after ??= payload?.after ?? fullAfter;
-    final cleanBefore = before?.replaceAll('\r\n', '\n');
+    var cleanBefore = before?.replaceAll('\r\n', '\n');
     final cleanAfter = after?.replaceAll('\r\n', '\n');
     if (cleanAfter == null && cleanBefore == null) return;
-    if (cleanAfter == cleanBefore) return;
+    if (cleanAfter == cleanBefore) {
+      if (!hadExplicitBefore && payload?.after != null) {
+        cleanBefore = '';
+      } else {
+        return;
+      }
+    }
 
     var startLine = 1;
     if (cleanBefore != null && fullBefore != null) {
@@ -1109,4 +1181,6 @@ final class AgyTranslator {
       value is String && value.isNotEmpty ? value : null;
   static int? _int(Object? value) =>
       value is int ? value : int.tryParse('$value');
+  static double? _double(Object? value) =>
+      value is num ? value.toDouble() : double.tryParse('$value');
 }

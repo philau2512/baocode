@@ -74,16 +74,29 @@ final class AgyEditTranscriptReader {
         final record = jsonDecode(line);
         if (record is! Map || record['tool_calls'] is! List) continue;
         for (final call in record['tool_calls'] as List) {
-          if (call is! Map || call['name'] != 'edit_file') continue;
+          if (call is! Map) continue;
+          final name = call['name'];
+          if (name != 'edit_file' && name != 'write_file') continue;
           final args = call['args'];
           if (args is! Map) continue;
-          final path = args['Path'] ?? args['path'];
-          final before = args['Target'] ?? args['target'];
-          final after = args['Replacement'] ?? args['replacement'];
-          if (path is String && before is String && after is String) {
-            snapshots
-                .putIfAbsent(_pathKey(path), () => <AgyEditSnapshot>[])
-                .add(AgyEditSnapshot(before: before, after: after));
+          final rawPath = args['Path'] ?? args['path'];
+          if (rawPath is! String) continue;
+          final path = _cleanPath(rawPath);
+          if (name == 'edit_file') {
+            final before = args['Target'] ?? args['target'];
+            final after = args['Replacement'] ?? args['replacement'];
+            if (before is String && after is String) {
+              snapshots
+                  .putIfAbsent(_pathKey(path), () => <AgyEditSnapshot>[])
+                  .add(AgyEditSnapshot(before: before, after: after));
+            }
+          } else if (name == 'write_file') {
+            final after = args['Content'] ?? args['content'];
+            if (after is String) {
+              snapshots
+                  .putIfAbsent(_pathKey(path), () => <AgyEditSnapshot>[])
+                  .add(AgyEditSnapshot(before: '', after: after));
+            }
           }
         }
       }
@@ -107,4 +120,12 @@ Future<AgyEditSnapshot?> readAgyEditSnapshot({
   editIndex: editIndex,
 );
 
-String _pathKey(String path) => path.replaceAll('\\', '/').toLowerCase();
+String _cleanPath(String path) {
+  var p = path.trim();
+  if (p.startsWith('"') && p.endsWith('"') && p.length >= 2) {
+    p = p.substring(1, p.length - 1).trim();
+  }
+  return p;
+}
+
+String _pathKey(String path) => _cleanPath(path).replaceAll('\\', '/').toLowerCase();

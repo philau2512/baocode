@@ -1281,4 +1281,154 @@ Free space 1.0M tokens (97%)''',
     final assistantUpsert = events.whereType<ItemUpserted>().last;
     expect(assistantUpsert.item, isA<AssistantTextItem>());
   });
+
+  test('creates ThinkingItem from agent_response and loads thinking text asynchronously', () async {
+    final events = <KernelEvent>[];
+    final completer = Completer<void>();
+    final translator = AgyTranslator(
+      emit: (e) {
+        events.add(e);
+        if (e is ItemUpserted &&
+            e.item is ThinkingItem &&
+            (e.item as ThinkingItem).text.contains('Detailed reasoning from transcript')) {
+          if (!completer.isCompleted) completer.complete();
+        }
+      },
+      nextSeq: () => events.length,
+      readStepThinking: (conversation, stepIndex) async {
+        if (conversation == 'conv-think-1' && '$stepIndex' == '1') {
+          return 'Detailed reasoning from transcript about prime numbers';
+        }
+        return null;
+      },
+    );
+
+    translator.accept({
+      'event': 'init',
+      'conversation_id': 'conv-think-1',
+    });
+    translator.beginTurn('turn-think-async');
+
+    // AGY CLI emits agent_response DONE with duration (no text_delta)
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_index': 1,
+        'step_type': 'agent_response',
+        'state': 'DONE',
+        'duration_seconds': 5.2,
+      },
+    });
+
+    // Wait for async disk transcript load
+    await completer.future.timeout(const Duration(seconds: 2));
+
+    // ThinkingItem should have the loaded text and tokens
+    final thinkingUpsert = events.whereType<ItemUpserted>().firstWhere(
+      (e) => e.item is ThinkingItem,
+    );
+    final thinking = thinkingUpsert.item as ThinkingItem;
+    expect(thinking.tokens, greaterThan(0));
+    expect(thinking.seconds, 5);
+    expect(thinking.text, contains('Detailed reasoning from transcript'));
+  });
+
+  test('does not create empty ThinkingItem when transcript has no thinking for that step', () async {
+    final events = <KernelEvent>[];
+    final translator = AgyTranslator(
+      emit: events.add,
+      nextSeq: () => events.length,
+      readStepThinking: (conversation, stepIndex) async => null,
+    );
+
+    translator.accept({
+      'event': 'init',
+      'conversation_id': 'conv-think-2',
+    });
+    translator.beginTurn('turn-no-think');
+
+    // Step with no thinking in transcript (e.g. step 3)
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_index': 3,
+        'step_type': 'agent_response',
+        'state': 'DONE',
+        'duration_seconds': 8.0,
+      },
+    });
+
+    // Tool step
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_index': 4,
+        'step_type': 'tool',
+        'tool_name': 'run_command',
+        'parameters': {
+          'CommandLine': 'rg -n receivables',
+        },
+      },
+    });
+
+    await Future.delayed(const Duration(milliseconds: 150));
+
+    // No ThinkingItem should be emitted because step 3 had no thinking text
+    expect(events.whereType<ItemUpserted>().any((e) => e.item is ThinkingItem), isFalse);
+    expect(events.whereType<ItemUpserted>().any((e) => e.item is TerminalItem), isTrue);
+  });
+
+  test('write_file tool emits CodeDiffItem with diff lines', () async {
+    final tempDir = Directory.systemTemp.createTempSync('agy-write-test');
+    addTearDown(() {
+      try {
+        tempDir.deleteSync(recursive: true);
+      } catch (_) {}
+    });
+    final file = File(p.join(tempDir.path, 'created.txt'));
+
+    final events = <KernelEvent>[];
+    final translator = AgyTranslator(
+      emit: events.add,
+      nextSeq: () => events.length,
+      readFile: (path) async {
+        if (File(path).existsSync()) return File(path).readAsString();
+        return null;
+      },
+    )..beginTurn('turn-write');
+
+    // Simulate AGY CLI tool call with 'args' (as emitted from AGY jsonl)
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_id': 'write-1',
+        'tool_name': 'write_file',
+        'state': 'COMPLETED',
+        'tool_info': {
+          'args': {
+            'Path': file.path,
+            'Content': 'line 1\nline 2\n',
+          },
+          'output': 'Created file',
+        },
+      },
+    });
+
+    // Write to disk as AGY CLI does
+    file.writeAsStringSync('line 1\nline 2\n');
+
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+
+    final diffItems = events
+        .whereType<ItemUpserted>()
+        .map((e) => e.item)
+        .whereType<CodeDiffItem>()
+        .toList();
+
+    expect(diffItems, hasLength(1));
+    expect(diffItems.single.fileName, 'created.txt');
+    expect(diffItems.single.added, 2);
+    expect(diffItems.single.removed, 0);
+  });
 }

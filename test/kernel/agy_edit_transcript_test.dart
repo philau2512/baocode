@@ -29,4 +29,29 @@ void main() {
     expect(snapshot?.before, 'old');
     expect(snapshot?.after, 'new');
   });
+
+  test('reads persisted write_file tool arguments', () async {
+    final home = await Directory.systemTemp.createTemp('agy-edit-transcript-write-');
+    addTearDown(() => home.delete(recursive: true));
+    final file = File('${home.path}\\.gemini\\antigravity-cli\\brain\\conversation-2\\.system_generated\\logs\\transcript_full.jsonl');
+    await file.parent.create(recursive: true);
+
+    await file.writeAsString('${jsonEncode({
+      'tool_calls': [
+        {'name': 'write_file', 'args': {
+          'Path': r'C:\PROJECTS\baocode\NEW.md',
+          'Content': 'new document content\n',
+        }},
+      ],
+    })}\n');
+
+    final snapshot = await readAgyEditSnapshot(
+      home: home.path,
+      conversation: 'conversation-2',
+      path: 'C:/PROJECTS/baocode/NEW.md',
+    );
+
+    expect(snapshot?.before, '');
+    expect(snapshot?.after, 'new document content\n');
+  });
 }

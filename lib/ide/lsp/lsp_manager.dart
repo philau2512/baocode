@@ -357,17 +357,24 @@ class LspManager extends ChangeNotifier
       }
     }
 
-    // Trigger incremental compile for Java LSP (JDT.LS) after didSave notifications.
+    // Trigger full workspace compile for Java LSP (JDT.LS) to clean build cache
+    // and re-evaluate annotation processors (e.g. MapStruct, Lombok).
+    final compileFutures = <Future<Object?>>[];
     for (final server in _servers.values) {
       final client = server.client;
       if (client != null && client.isInitialized) {
         if (client.commands.contains('java.workspace.compile')) {
-          unawaited(_ask(client, 'workspace/executeCommand', {
-            'command': 'java.workspace.compile',
-            'arguments': [false],
-          }));
+          compileFutures.add(
+            _ask(client, 'workspace/executeCommand', {
+              'command': 'java.workspace.compile',
+              'arguments': [true],
+            }),
+          );
         }
       }
+    }
+    if (compileFutures.isNotEmpty) {
+      await Future.wait(compileFutures.map((f) => f.catchError((_) => null)));
     }
 
     _notify();

@@ -271,5 +271,55 @@ void main() {
       await tester.pumpAndSettle();
       expect(treeRows(tester), 2);
     });
+
+    testWidgets('toggles between tree and list view', (tester) async {
+      await pump(tester, [
+        const FileChange(path: '/p/src/main/a.ts', added: 2, removed: 0),
+        const FileChange(path: '/p/src/main/b.ts', added: 5, removed: 0),
+      ]);
+      await expand(tester);
+
+      // Initially Tree view: folder 'src/main' is present
+      var labels = tester
+          .widgetList<IdeResourceLabel>(find.byType(IdeResourceLabel))
+          .map((label) => (label.name, label.description))
+          .toList();
+      expect(labels, [
+        ('src/main', null),
+        ('a.ts', null),
+        ('b.ts', null),
+      ]);
+      expect(find.byIcon(Codicons.listFlat), findsOneWidget);
+
+      // Toggle to List view
+      await tester.tap(find.byIcon(Codicons.listFlat));
+      await tester.pumpAndSettle();
+
+      // In List view: folders are gone, files are listed flat with directory description
+      labels = tester
+          .widgetList<IdeResourceLabel>(find.byType(IdeResourceLabel))
+          .map((label) => (label.name, label.description))
+          .toList();
+      expect(labels, [
+        ('a.ts', 'src/main'),
+        ('b.ts', 'src/main'),
+      ]);
+      expect(find.byIcon(Codicons.listTree), findsOneWidget);
+
+      // Toggle back to Tree view
+      await tester.tap(find.byIcon(Codicons.listTree));
+      await tester.pumpAndSettle();
+
+      labels = tester
+          .widgetList<IdeResourceLabel>(find.byType(IdeResourceLabel))
+          .map((label) => (label.name, label.description))
+          .toList();
+      expect(labels, [
+        ('src/main', null),
+        ('a.ts', null),
+        ('b.ts', null),
+      ]);
+      expect(find.byIcon(Codicons.listFlat), findsOneWidget);
+    });
   });
 }

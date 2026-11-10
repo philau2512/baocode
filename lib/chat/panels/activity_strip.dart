@@ -9,6 +9,7 @@ import '../../ide/ide_list.dart' show IdeListColors;
 import '../../ide/ide_menu.dart';
 import '../../kernel/kernel_types.dart';
 import '../../l10n/l10n.dart';
+import '../../settings/user_settings.dart' show SettingsFiles;
 import '../../theme/app_theme.dart';
 import '../../theme/codicons.dart';
 import '../../theme/workbench_theme.dart' show themeColors;
@@ -92,6 +93,28 @@ class _ActivityStripState extends State<ActivityStrip> {
   /// files changed do.
   static const _maxUnfoldedTasks = 3;
 
+  static const _viewModeKey = 'chat.activityStrip.asTree';
+
+  late bool _asTree = _readViewMode();
+
+  static bool _readViewMode() {
+    try {
+      return SettingsFiles.instance.storage.get<bool>(_viewModeKey) ?? true;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  void _toggleViewMode() {
+    setState(() {
+      _asTree = !_asTree;
+      _countTreeRows();
+    });
+    try {
+      unawaited(SettingsFiles.instance.storage.set(_viewModeKey, _asTree));
+    } catch (_) {}
+  }
+
   bool _filesExpanded = false;
   bool _tasksExpanded = false;
   Timer? _ticker;
@@ -168,6 +191,7 @@ class _ActivityStripState extends State<ActivityStrip> {
     widget.root,
     widget.changes,
     paths: widget.paths,
+    asTree: _asTree,
   );
 
   @override
@@ -266,8 +290,10 @@ class _ActivityStripState extends State<ActivityStrip> {
                 _FilesHeader(
                   changes: changes,
                   expanded: _filesExpanded,
+                  asTree: _asTree,
                   onToggle: () =>
                       setState(() => _filesExpanded = !_filesExpanded),
+                  onToggleViewMode: _toggleViewMode,
                   onUndo: widget.onUndo,
                   onKeep: widget.onKeep,
                 ),
@@ -277,6 +303,7 @@ class _ActivityStripState extends State<ActivityStrip> {
                     child: ChangeTree(
                       root: widget.root,
                       paths: widget.paths,
+                      asTree: _asTree,
                       changes: changes,
                       key: _tree,
                       height: _treeHeight,
@@ -522,14 +549,18 @@ class _FilesHeader extends StatelessWidget {
   const _FilesHeader({
     required this.changes,
     required this.expanded,
+    required this.asTree,
     required this.onToggle,
+    required this.onToggleViewMode,
     required this.onUndo,
     required this.onKeep,
   });
 
   final List<FileChange> changes;
   final bool expanded;
+  final bool asTree;
   final VoidCallback onToggle;
+  final VoidCallback onToggleViewMode;
   final VoidCallback? onUndo;
   final VoidCallback onKeep;
 
@@ -587,6 +618,13 @@ class _FilesHeader extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 8),
+        _IconAction(
+          icon: asTree ? Codicons.listFlat : Codicons.listTree,
+          tooltip:
+              asTree ? context.l10n.scmViewAsList : context.l10n.scmViewAsTree,
+          onTap: onToggleViewMode,
+        ),
+        const SizedBox(width: 6),
         if (onUndo case final onUndo?) ...[
           SizedBox(
             height: 20,

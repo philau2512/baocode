@@ -31,6 +31,7 @@ class ChangeTree extends StatefulWidget {
     required this.root,
     required this.changes,
     this.paths,
+    this.asTree = true,
     this.maxRows = defaultMaxRows,
     this.height,
     this.onOpen,
@@ -46,6 +47,7 @@ class ChangeTree extends StatefulWidget {
   /// How [root] and [changes]' paths are spelled (a remote project's
   /// host's way); this machine's when null.
   final p.Context? paths;
+  final bool asTree;
   final int maxRows;
 
   /// How high it is, as dragged (see [maxHeight]); null for [maxRows]
@@ -79,8 +81,10 @@ class ChangeTree extends StatefulWidget {
     String root,
     List<FileChange> changes, {
     p.Context? paths,
+    bool asTree = true,
   }) {
     if (changes.isEmpty) return 0;
+    if (!asTree) return changes.length;
     var count = 0;
     void add(List<IdeScmTreeNode> nodes) {
       for (final node in nodes) {
@@ -156,7 +160,8 @@ class ChangeTreeState extends State<ChangeTree> {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.changes, widget.changes) ||
         oldWidget.root != widget.root ||
-        oldWidget.paths != widget.paths) {
+        oldWidget.paths != widget.paths ||
+        oldWidget.asTree != widget.asTree) {
       _layOut();
     }
   }
@@ -175,33 +180,48 @@ class ChangeTreeState extends State<ChangeTree> {
   void _layOut() {
     final byPath = {for (final change in widget.changes) change.path: change};
     final rows = <_Row>[];
-    void add(List<IdeScmTreeNode> nodes, int depth) {
-      for (final node in nodes) {
-        switch (node) {
-          case IdeScmTreeFolder():
-            rows.add(
-              _FolderRow(node, depth, [
-                for (final resource in node.resources) byPath[resource.path]!,
-              ]),
-            );
-            if (!_collapsed.contains(node.path)) add(node.children, depth + 1);
-          case IdeScmTreeFile(:final resource):
-            rows.add(_FileRow(byPath[resource.path]!, resource.status, depth));
+    if (widget.asTree) {
+      void add(List<IdeScmTreeNode> nodes, int depth) {
+        for (final node in nodes) {
+          switch (node) {
+            case IdeScmTreeFolder():
+              rows.add(
+                _FolderRow(node, depth, [
+                  for (final resource in node.resources) byPath[resource.path]!,
+                ]),
+              );
+              if (!_collapsed.contains(node.path)) add(node.children, depth + 1);
+            case IdeScmTreeFile(:final resource):
+              rows.add(_FileRow(byPath[resource.path]!, resource.status, depth));
+          }
         }
       }
-    }
 
-    add(
-      ideScmTree(widget.root, [
-        for (final change in widget.changes)
-          IdeGitResource(
-            path: change.path,
-            status: _status(change),
-            group: IdeGitGroup.workingTree,
-          ),
-      ], paths: widget.paths),
-      1,
-    );
+      add(
+        ideScmTree(widget.root, [
+          for (final change in widget.changes)
+            IdeGitResource(
+              path: change.path,
+              status: _status(change),
+              group: IdeGitGroup.workingTree,
+            ),
+        ], paths: widget.paths),
+        1,
+      );
+    } else {
+      final sorted = [...widget.changes]..sort((a, b) {
+        final relA = _paths.isWithin(widget.root, a.path)
+            ? _paths.relative(a.path, from: widget.root)
+            : a.path;
+        final relB = _paths.isWithin(widget.root, b.path)
+            ? _paths.relative(b.path, from: widget.root)
+            : b.path;
+        return relA.compareTo(relB);
+      });
+      for (final change in sorted) {
+        rows.add(_FileRow(change, _status(change), 1));
+      }
+    }
     _rows = rows;
   }
 
@@ -347,7 +367,11 @@ class ChangeTreeState extends State<ChangeTree> {
     final relative = _paths.isWithin(widget.root, change.path)
         ? _paths.relative(change.path, from: widget.root)
         : change.path;
+    final directory = _paths.dirname(relative).replaceAll('\\', '/');
     final open = widget.onOpen;
+    final indent = widget.asTree
+        ? 8.0 + (row.depth - 1) * IdeListColors.indent + 22
+        : 8.0 + 4.0;
     return IdeListRow(
       key: ValueKey(change.path),
       tooltip: ['$relative • $kind', ?note].join('\n'),
@@ -355,7 +379,7 @@ class ChangeTreeState extends State<ChangeTree> {
       onContextMenu: (position) => _showMenu(position, [change], file: change),
       builder: (context, hovered) => Padding(
         padding: EdgeInsets.only(
-          left: 8.0 + (row.depth - 1) * IdeListColors.indent + 22,
+          left: indent,
           right: 8,
         ),
         child: Row(
@@ -365,6 +389,7 @@ class ChangeTreeState extends State<ChangeTree> {
             Expanded(
               child: IdeResourceLabel(
                 name: _paths.basename(change.path),
+                description: !widget.asTree && directory != '.' ? directory : null,
                 strikeThrough: row.status.strikeThrough,
                 letter: row.status.letter,
                 letterColor: row.status.color,
