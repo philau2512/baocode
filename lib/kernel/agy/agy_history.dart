@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import '../../chat/chat_models.dart';
 import '../agent_kernel.dart';
@@ -86,6 +87,23 @@ final class AgyHistory {
     }
     if (type == 'PLANNER_RESPONSE' || type == 'GENERIC') {
       if (type == 'PLANNER_RESPONSE') {
+        final thinking = _string(step['thinking']);
+        if (thinking != null && thinking.trim().isNotEmpty) {
+          final stepIdx = step['step_index'] ?? _pendingToolIds.length;
+          final thinkId = 'agy-history-$stepIdx:thinking';
+          final tokens = math.max(1, (thinking.length / 3.5).round());
+          emit(
+            ItemUpserted(
+              nextSeq(),
+              thinkId,
+              ThinkingItem(
+                text: thinking.trim(),
+                tokens: tokens,
+                seconds: math.max(1, (tokens / 50).round()),
+              ),
+            ),
+          );
+        }
         _emitToolCalls(step['tool_calls'], step: step);
       }
       if (content != null && !_isInternalEnvelope(content)) {

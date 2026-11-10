@@ -212,6 +212,11 @@ class ToolCallRow extends StatelessWidget {
           size: 15,
           color: AppColors.textMuted,
         ),
+        (ToolKind.web, _) => Icon(
+          Icons.travel_explore_rounded,
+          size: 15,
+          color: AppColors.textMuted,
+        ),
         _ => switch (tool?.toLowerCase()) {
           'schedule' => Icon(
             Icons.schedule_rounded,

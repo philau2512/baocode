@@ -67,6 +67,11 @@ final class AgyTranslator {
   String? textId;
   int textLength = 0;
   int _textCount = 0;
+  String? thinkingId;
+  int thoughtLength = 0;
+  int _thoughtCount = 0;
+  DateTime? _thoughtStartedAt;
+  final StringBuffer _thoughtBuffer = StringBuffer();
   DateTime? startedAt;
 
   /// Maps AGY's tool identity to the stable BaoCode item id. AGY emits
@@ -93,6 +98,11 @@ final class AgyTranslator {
     textId = null;
     textLength = 0;
     _textCount = 0;
+    thinkingId = null;
+    thoughtLength = 0;
+    _thoughtCount = 0;
+    _thoughtStartedAt = null;
+    _thoughtBuffer.clear();
     startedAt = null;
     _toolCount = 0;
     _tools.clear();
@@ -116,9 +126,26 @@ final class AgyTranslator {
 
   void _step(Map<String, Object?> step) {
     final kind = _string(step['step_type']) ?? _string(step['type']);
-    if (kind == 'agent_response') {
+    final thinkingDelta = _string(step['thinking_delta']) ??
+        _string(step['delta_thinking']);
+    final thinkingContent = _string(step['thinking']);
+
+    if (thinkingDelta != null && thinkingDelta.isNotEmpty) {
+      _thinking(step, thinkingDelta);
+    } else if (kind == 'thinking' || kind == 'thought') {
+      final thought = _string(step['text_delta']) ?? thinkingContent ?? '';
+      if (thought.isNotEmpty) _thinking(step, thought);
+    } else if (kind == 'agent_response') {
+      if (thinkingContent != null && thinkingContent.isNotEmpty && thinkingId == null) {
+        _thinking(step, thinkingContent);
+        _completeThinking();
+      }
       _text(step);
     } else if (kind == 'tool') {
+      if (thinkingContent != null && thinkingContent.isNotEmpty && thinkingId == null) {
+        _thinking(step, thinkingContent);
+        _completeThinking();
+      }
       _tool(step);
     }
     final usage = _map(step['usage']);
@@ -130,9 +157,72 @@ final class AgyTranslator {
     beginTurn('agy-turn-${DateTime.now().microsecondsSinceEpoch}');
   }
 
+  void _completeThinking() {
+    if (thinkingId == null) return;
+    final id = thinkingId!;
+    final started = _thoughtStartedAt ?? startedAt ?? DateTime.now();
+    final seconds = math.max(1, DateTime.now().difference(started).inSeconds);
+    final tokens = math.max(1, (thoughtLength / 3.5).round());
+    emit(
+      ItemUpserted(
+        nextSeq(),
+        id,
+        ThinkingItem(
+          text: _thoughtBuffer.toString(),
+          tokens: tokens,
+          seconds: seconds,
+          startedAt: started,
+        ),
+      ),
+    );
+    emit(ItemCompleted(nextSeq(), id));
+    thinkingId = null;
+    thoughtLength = 0;
+    _thoughtStartedAt = null;
+    _thoughtBuffer.clear();
+  }
+
+  void _thinking(Map<String, Object?> step, String delta) {
+    if (delta.isEmpty) return;
+    _begin();
+    if (textId != null) {
+      emit(ItemCompleted(nextSeq(), textId!));
+      textId = null;
+      textLength = 0;
+    }
+    final id = thinkingId ??= '$turnId:thinking:${_thoughtCount++}';
+    if (thoughtLength == 0) {
+      _thoughtStartedAt = DateTime.now();
+      emit(
+        ItemUpserted(
+          nextSeq(),
+          id,
+          ThinkingItem(
+            text: '',
+            tokens: 0,
+            startedAt: _thoughtStartedAt,
+          ),
+          streaming: true,
+        ),
+      );
+    }
+    _thoughtBuffer.write(delta);
+    emit(
+      TextDelta(
+        nextSeq(),
+        id,
+        thoughtLength,
+        delta,
+        tokens: math.max(1, ((thoughtLength + delta.length) / 3.5).round()),
+      ),
+    );
+    thoughtLength += delta.length;
+  }
+
   void _text(Map<String, Object?> step) {
     final delta = _string(step['text_delta']) ?? '';
     if (delta.isEmpty) return;
+    _completeThinking();
     _begin();
     final id = textId ??= '$turnId:assistant:${_textCount++}';
     if (textLength == 0) {
@@ -150,6 +240,7 @@ final class AgyTranslator {
   }
 
   void _tool(Map<String, Object?> step) {
+    _completeThinking();
     _begin();
     if (textId != null) {
       emit(ItemCompleted(nextSeq(), textId!));
@@ -196,8 +287,6 @@ final class AgyTranslator {
     } else {
       id = '$turnId:tool:${_toolCount++}';
     }
-    final interactionId = _interactions.parse(step, info);
-    if (interactionId != null) _interactionTools[interactionId] = name;
     final state =
         (_string(step['state']) ??
                 _string(step['status']) ??
@@ -222,6 +311,15 @@ final class AgyTranslator {
     } else if (done) {
       _activeToolIds.remove(scopeKey);
     }
+    final interactionId = _interactions.parse(
+      step,
+      info,
+      name: name,
+      parameters: parameters,
+      toolCallId: id,
+      done: done,
+    );
+    if (interactionId != null) _interactionTools[interactionId] = name;
     final failed = const {
       'ERROR',
       'FAILED',
@@ -284,8 +382,9 @@ final class AgyTranslator {
       unawaited(beforeEdit?.call(path));
     }
     final isTaskTool = _isTaskTool(name);
-    final taskId = _taskId(parameters, output) ?? id;
-    if (isTaskTool) {
+    final taskAction = _string(parameters['Action'] ?? parameters['action'])?.toLowerCase();
+    final taskId = _taskId(parameters, output);
+    if (isTaskTool && taskId != null && taskAction != 'list') {
       _reportTask(taskId, name: name, state: state, output: output);
     }
     if (isAgent) {
@@ -357,10 +456,16 @@ final class AgyTranslator {
             : (mcp != null
                 ? (mcp.target ?? '')
                 : (isFilePath ? _baseName(path) : path) ?? name));
+    final commandSummary = _string(parameters['toolSummary']) ??
+        _string(info['description']) ??
+        _string(step['description']) ??
+        _string(info['summary']) ??
+        _string(step['summary']);
     final item = command != null
         ? TerminalItem(
             command: command,
             output: output ?? '',
+            description: commandSummary,
             status: failed
                 ? CommandStatus.failed
                 : done
@@ -836,6 +941,7 @@ final class AgyTranslator {
   void _result(Map<String, Object?> result) {
     final current = turnId;
     if (current == null) return;
+    _completeThinking();
     final id = textId;
     if (id != null) emit(ItemCompleted(nextSeq(), id));
     final rawUsage = _map(result['usage']);

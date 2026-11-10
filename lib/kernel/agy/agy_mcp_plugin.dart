@@ -35,8 +35,23 @@ final class AgyMcpPluginParser {
   ) {
     final lower = name.toLowerCase();
     final plugin = lower.contains('plugin') || lower.contains('marketplace');
-    final server = _value(input, const ['server', 'servername']);
-    final tool = _value(input, const ['tool', 'toolname']);
+    String? server = _value(input, const ['server', 'servername']);
+    String? tool = _value(input, const ['tool', 'toolname']);
+
+    if (server == null && tool == null && lower.startsWith('mcp_')) {
+      final stripped = name.substring(4);
+      final firstUnderscore = stripped.indexOf('_');
+      if (firstUnderscore > 0 && firstUnderscore < stripped.length - 1) {
+        server = stripped.substring(0, firstUnderscore);
+        tool = stripped.substring(firstUnderscore + 1);
+      } else {
+        tool = stripped;
+      }
+    } else if (server == null && (lower == 'list_resources' || lower == 'read_resource')) {
+      server = _value(input, const ['servername', 'server']) ?? 'resources';
+      tool = name;
+    }
+
     final label = plugin
         ? 'Plugin · ${_value(input, const ['name', 'plugin']) ?? name}'
         : 'MCP · ${server ?? name}${tool == null ? '' : ' · $tool'}';

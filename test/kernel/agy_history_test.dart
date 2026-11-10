@@ -371,4 +371,48 @@ void main() {
     expect(killTimerItem.label, 'Cancelled timer');
     expect(killTimerItem.target, 'Check task-150 status (5s)');
   });
+
+  test('restores thinking as ThinkingItem from PLANNER_RESPONSE steps', () async {
+    final dir = await Directory.systemTemp.createTemp('agy-history-thinking');
+    addTearDown(() => dir.delete(recursive: true));
+    final file = File('${dir.path}\\transcript.jsonl');
+    await file.writeAsString([
+      jsonEncode({
+        'step_index': 0,
+        'type': 'USER_INPUT',
+        'content': '<USER_REQUEST>\nSolve math puzzle\n</USER_REQUEST>',
+      }),
+      jsonEncode({
+        'step_index': 1,
+        'type': 'PLANNER_RESPONSE',
+        'thinking': 'First, compare the integer parts. Both are 9. Next, compare the tenths...',
+        'content': '9.9 is larger than 9.11.',
+      }),
+    ].join('\n'));
+
+    final events = <KernelEvent>[];
+    await AgyHistory(emit: events.add, nextSeq: () => events.length).replay(
+      SessionRecord(
+        id: 'history-thinking',
+        title: 'history',
+        updatedAt: DateTime.now(),
+        cwd: dir.path,
+        path: file.path,
+      ),
+    );
+
+    final itemsById = <String, ChatItem>{
+      for (final event in events.whereType<ItemUpserted>())
+        event.id: event.item,
+    };
+
+    final thinkingItem = itemsById['agy-history-1:thinking'] as ThinkingItem;
+    expect(thinkingItem.text, contains('First, compare the integer parts'));
+    expect(thinkingItem.streaming, isFalse);
+    expect(thinkingItem.tokens, greaterThan(0));
+    expect(thinkingItem.seconds, greaterThanOrEqualTo(1));
+
+    final assistantItem = itemsById['1:history'] as AssistantTextItem;
+    expect(assistantItem.text, '9.9 is larger than 9.11.');
+  });
 }

@@ -1022,4 +1022,224 @@ Free space 1.0M tokens (97%)''',
     expect(item2, isA<AssistantTextItem>());
     expect((item2 as AssistantTextItem).text, 'Completed all tasks!');
   });
+
+  test('run_command preserves toolSummary as TerminalItem.description', () {
+    final events = <KernelEvent>[];
+    final translator = AgyTranslator(
+      emit: events.add,
+      nextSeq: () => events.length,
+    )..beginTurn('turn-terminal');
+
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_id': 'cmd-1',
+        'tool_name': 'run_command',
+        'state': 'COMPLETED',
+        'tool_info': {
+          'parameters': {
+            'CommandLine': 'git status',
+            'toolSummary': 'Git status check',
+          },
+          'output': 'On branch main',
+        },
+      },
+    });
+
+    final upserted = events.whereType<ItemUpserted>().last;
+    expect(upserted.item, isA<TerminalItem>());
+    final term = upserted.item as TerminalItem;
+    expect(term.command, 'git status');
+    expect(term.description, 'Git status check');
+    expect(term.status, CommandStatus.succeeded);
+  });
+
+  test('ask_question emits QuestionRequest interaction', () {
+    final events = <KernelEvent>[];
+    final translator = AgyTranslator(
+      emit: events.add,
+      nextSeq: () => events.length,
+    )..beginTurn('turn-question');
+
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_id': 'q-1',
+        'tool_name': 'ask_question',
+        'state': 'ACTIVE',
+        'tool_info': {
+          'parameters': {
+            'questions': [
+              {
+                'question': 'Choose deployment target',
+                'options': ['(Recommended) Staging', 'Production'],
+                'is_multi_select': false,
+              }
+            ],
+          },
+        },
+      },
+    });
+
+    final interaction = events.whereType<InteractionRequested>().single;
+    expect(interaction.request, isA<QuestionRequest>());
+    final req = interaction.request as QuestionRequest;
+    expect(req.id, 'q-1');
+    expect(req.questions, hasLength(1));
+    expect(req.questions.first.prompt, 'Choose deployment target');
+    expect(req.questions.first.options, hasLength(2));
+    expect(req.questions.first.options.first.label, '(Recommended) Staging');
+  });
+
+  test('define_subagent formats label and target properly', () {
+    final events = <KernelEvent>[];
+    final translator = AgyTranslator(
+      emit: events.add,
+      nextSeq: () => events.length,
+    )..beginTurn('turn-define');
+
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_id': 'sub-def-1',
+        'tool_name': 'define_subagent',
+        'state': 'COMPLETED',
+        'tool_info': {
+          'parameters': {
+            'Name': 'Database Debugger',
+            'Description': 'Inspects PostgreSQL schemas and locks',
+            'SystemPrompt': 'You are a database expert.',
+          },
+        },
+      },
+    });
+
+    final upserted = events.whereType<ItemUpserted>().last;
+    expect(upserted.item, isA<ToolCallItem>());
+    final tool = upserted.item as ToolCallItem;
+    expect(tool.label, 'Define Agent');
+    expect(tool.target, 'Database Debugger');
+    expect(tool.detail, 'Inspects PostgreSQL schemas and locks');
+  });
+
+  test('manage_task with action list does not report a background task', () {
+    final tasks = <KernelTask>[];
+    final events = <KernelEvent>[];
+    final translator = AgyTranslator(
+      emit: events.add,
+      nextSeq: () => events.length,
+      onTasksChanged: (t) => tasks.addAll(t),
+    )..beginTurn('turn-task');
+
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_id': 'task-list-1',
+        'tool_name': 'manage_task',
+        'state': 'COMPLETED',
+        'tool_info': {
+          'parameters': {
+            'Action': 'list',
+          },
+          'output': 'Active tasks: none',
+        },
+      },
+    });
+
+    expect(tasks, isEmpty);
+  });
+
+  test('eager MCP tools starting with mcp_ are classified as ToolKind.mcp with clean label', () {
+    final events = <KernelEvent>[];
+    final translator = AgyTranslator(
+      emit: events.add,
+      nextSeq: () => events.length,
+    )..beginTurn('turn-mcp');
+
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_id': 'mcp-1',
+        'tool_name': 'mcp_fast-context_fast_context_search',
+        'state': 'COMPLETED',
+        'tool_info': {
+          'parameters': {
+            'query': 'AgyTranslator',
+          },
+          'output': 'Found 5 symbols',
+        },
+      },
+    });
+
+    final upserted = events.whereType<ItemUpserted>().last;
+    expect(upserted.item, isA<ToolCallItem>());
+    final tool = upserted.item as ToolCallItem;
+    expect(tool.kind, ToolKind.mcp);
+    expect(tool.label, 'MCP · fast-context · fast_context_search');
+    expect(tool.target, 'AgyTranslator');
+  });
+
+  test('streams thinking_delta and completes ThinkingItem when assistant text starts', () {
+    final events = <KernelEvent>[];
+    final translator = AgyTranslator(
+      emit: events.add,
+      nextSeq: () => events.length,
+    )..beginTurn('turn-thinking');
+
+    // 1. Thinking delta chunk 1
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'agent_response',
+        'thinking_delta': 'Thinking about mathematics...',
+      },
+    });
+
+    final thinkUpsert1 = events.whereType<ItemUpserted>().first;
+    expect(thinkUpsert1.item, isA<ThinkingItem>());
+    expect((thinkUpsert1.item as ThinkingItem).streaming, isTrue);
+
+    final delta1 = events.whereType<TextDelta>().first;
+    expect(delta1.text, 'Thinking about mathematics...');
+
+    // 2. Thinking delta chunk 2
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'agent_response',
+        'thinking_delta': ' 9.9 is greater than 9.11.',
+      },
+    });
+
+    final delta2 = events.whereType<TextDelta>().last;
+    expect(delta2.text, ' 9.9 is greater than 9.11.');
+
+    // 3. Assistant text starts
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'agent_response',
+        'text_delta': 'The larger number is 9.9.',
+      },
+    });
+
+    // Thinking item should be completed with non-streaming ThinkingItem
+    final completedItems = events.whereType<ItemUpserted>().where((e) => e.item is ThinkingItem).toList();
+    expect(completedItems, hasLength(2));
+    final completedThinking = completedItems.last.item as ThinkingItem;
+    expect(completedThinking.streaming, isFalse);
+    expect(completedThinking.text, 'Thinking about mathematics... 9.9 is greater than 9.11.');
+    expect(completedThinking.seconds, greaterThanOrEqualTo(1));
+
+    expect(events.whereType<ItemCompleted>().any((e) => e.id.contains('thinking')), isTrue);
+
+    // Assistant text should now be streaming
+    final assistantUpsert = events.whereType<ItemUpserted>().last;
+    expect(assistantUpsert.item, isA<AssistantTextItem>());
+  });
 }

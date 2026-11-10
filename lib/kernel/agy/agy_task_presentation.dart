@@ -85,6 +85,9 @@ final class AgyTaskPresentation {
     if (lower == 'manage_subagents') {
       return _parseManageSubagents(input, running: running);
     }
+    if (lower == 'define_subagent') {
+      return _parseDefineSubagent(input);
+    }
     return null;
   }
 
@@ -196,6 +199,16 @@ final class AgyTaskPresentation {
     return AgyTaskToolInfo(
       label: label,
       target: action == 'kill_all' ? 'all subagents' : 'subagents',
+    );
+  }
+
+  static AgyTaskToolInfo _parseDefineSubagent(Map<String, Object?> input) {
+    final name = _clean(input['Name'] ?? input['name']) ?? 'agent';
+    final desc = _clean(input['Description'] ?? input['description']);
+    return AgyTaskToolInfo(
+      label: 'Define Agent',
+      target: name,
+      detail: desc,
     );
   }
 
