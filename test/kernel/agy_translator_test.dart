@@ -613,33 +613,30 @@ Free space 1.0M tokens (97%)''',
     expect(edit.original, isNotNull);
   });
 
-  test('notifies edit watch callbacks before and after tool edit', () async {
-    final beforeCalls = <String>[];
-    final afterCalls = <String>[];
+  test('ChangeReview preserves initial base across multiple edits to same file', () async {
+    final tempDir = Directory.systemTemp.createTempSync('agy_multi_edit_test');
+    addTearDown(() {
+      try {
+        tempDir.deleteSync(recursive: true);
+      } catch (_) {}
+    });
+    final file = File('${tempDir.path}\\config.ts');
+    file.writeAsStringSync('const a = 1;\nconst b = 2;\n');
+
+    final review = ChangeReview(
+      BlobReviewStore.open('${tempDir.path}\\store'),
+      root: tempDir.path,
+    );
+
     final events = <KernelEvent>[];
     final translator = AgyTranslator(
       emit: events.add,
       nextSeq: () => events.length,
-      beforeEdit: (path) async => beforeCalls.add(path),
-      afterEdit: (path) async => afterCalls.add(path),
+      readFile: (path) async => file.readAsString(),
     )..beginTurn('turn-1');
 
-    translator.accept({
-      'event': 'step_update',
-      'step_update': {
-        'step_type': 'tool',
-        'tool_id': 'edit-1',
-        'tool_name': 'edit_file',
-        'state': 'ACTIVE',
-        'tool_info': {
-          'parameters': {'Path': 'popup.js', 'Target': 'old', 'Replacement': 'new'},
-        },
-      },
-    });
-    await Future<void>.delayed(Duration.zero);
-    expect(beforeCalls, ['popup.js']);
-    expect(afterCalls, isEmpty);
-
+    // First edit: change 'a = 1' to 'a = 10'
+    file.writeAsStringSync('const a = 10;\nconst b = 2;\n');
     translator.accept({
       'event': 'step_update',
       'step_update': {
@@ -648,12 +645,54 @@ Free space 1.0M tokens (97%)''',
         'tool_name': 'edit_file',
         'state': 'COMPLETED',
         'tool_info': {
-          'parameters': {'Path': 'popup.js', 'Target': 'old', 'Replacement': 'new'},
+          'parameters': {
+            'Path': file.path,
+            'Target': 'const a = 1;',
+            'Replacement': 'const a = 10;',
+          },
         },
       },
     });
-    await Future<void>.delayed(Duration.zero);
-    expect(afterCalls, ['popup.js']);
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+
+    final edit1 = events.whereType<FileEdited>().last;
+    review.report(edit1.change, original: edit1.original);
+    await review.look();
+
+    final baseAfterFirst = review.baseOf(file.path);
+    expect(baseAfterFirst, isNotNull);
+
+    // Second edit: change 'b = 2' to 'b = 20'
+    file.writeAsStringSync('const a = 10;\nconst b = 20;\n');
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_id': 'edit-2',
+        'tool_name': 'edit_file',
+        'state': 'COMPLETED',
+        'tool_info': {
+          'parameters': {
+            'Path': file.path,
+            'Target': 'const b = 2;',
+            'Replacement': 'const b = 20;',
+          },
+        },
+      },
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+
+    final edit2 = events.whereType<FileEdited>().last;
+    review.report(edit2.change, original: edit2.original);
+    await review.look();
+
+    // Base must remain the original file before the first edit, not rebased
+    expect(review.baseOf(file.path), baseAfterFirst);
+    expect(await review.original(file.path)!(), 'const a = 1;\nconst b = 2;\n');
+
+    // Undoing all restores the very original content
+    await review.undoAll();
+    expect(file.readAsStringSync(), 'const a = 1;\nconst b = 2;\n');
   });
 
   test('ChangeReview tracks and undoes AGY CRLF file edits', () async {

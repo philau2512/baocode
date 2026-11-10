@@ -35,8 +35,7 @@ final class AntigravityKernel
         ProvidesCommands,
         LoadsHistory,
         ConfirmsModelSwitch,
-        AcceptsImages,
-        WatchesEdits {
+        AcceptsImages {
   AntigravityKernel(
     this.descriptor,
     this._context, {
@@ -50,8 +49,6 @@ final class AntigravityKernel
       nextSeq: () => nextSeq,
       readFile: _readFile,
       readEditSnapshot: _readEditSnapshot,
-      beforeEdit: (path) => _editWatch?.beforeEdit(path),
-      afterEdit: (path) => _editWatch?.afterEdit(path),
       readSubagentTranscript: (conversation) =>
           _subagentTranscript.inspect(conversation: conversation),
       onTasksChanged: (tasks) => emit(TasksReported(nextSeq, tasks)),
@@ -102,10 +99,6 @@ final class AntigravityKernel
       AgySubagentTranscriptReader();
   final AgySubagentTaskReader _subagentTasks = AgySubagentTaskReader();
   final AgyImageStore _images = AgyImageStore();
-
-  @override
-  set editWatch(EditWatch? watch) => _editWatch = watch;
-  EditWatch? _editWatch;
 
   Future<void> _refreshSubagentTasks() async {
     final conversation = _sessionId;

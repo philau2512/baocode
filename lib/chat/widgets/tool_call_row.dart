@@ -394,8 +394,14 @@ class _TodoList extends StatelessWidget {
   Widget _item(TodoItem todo) {
     final done = todo.status == 'completed';
     final (icon, color) = switch (todo.status) {
-      'completed' => (todoDoneIcon, themeColors['charts.green']),
-      'in_progress' => (todoDoingIcon, themeColors['charts.blue']),
+      'completed' => (
+        todoDoneIcon,
+        themeColors.get('charts.green') ?? AppColors.added,
+      ),
+      'in_progress' => (
+        todoDoingIcon,
+        themeColors.get('charts.blue') ?? AppColors.accent,
+      ),
       _ => (todoOpenIcon, AppColors.textMuted),
     };
     return Row(
@@ -692,7 +698,8 @@ class _McpBody extends StatelessWidget {
               TextSpan(
                 text: command,
                 style: TextStyle(
-                  color: themeColors['terminal.ansiBrightCyan'],
+                  color: themeColors.get('terminal.ansiBrightCyan') ??
+                      AppColors.syntaxOption,
                 ),
               ),
             ],
@@ -703,7 +710,7 @@ class _McpBody extends StatelessWidget {
           const SizedBox(height: 10),
           Container(
             height: 1,
-            color: themeColors['panel.border'],
+            color: themeColors.get('panel.border') ?? AppColors.partBorder,
           ),
           const SizedBox(height: 10),
           Text(output!, style: stepMono),

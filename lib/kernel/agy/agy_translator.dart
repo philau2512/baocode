@@ -21,8 +21,6 @@ final class AgyTranslator {
     required this.emit,
     required this.nextSeq,
     this.onTurnEnded,
-    this.beforeEdit,
-    this.afterEdit,
     this.readFile,
     this.readEditSnapshot,
     this.readSubagentTranscript,
@@ -36,8 +34,6 @@ final class AgyTranslator {
   final void Function(KernelEvent event) emit;
   final int Function() nextSeq;
   final void Function(String turnId)? onTurnEnded;
-  final Future<void>? Function(String path)? beforeEdit;
-  final Future<void>? Function(String path)? afterEdit;
   final Future<String?> Function(String path)? readFile;
   final Future<({String before, String after})?> Function(
     String path, {
@@ -378,9 +374,6 @@ final class AgyTranslator {
       _beforeFiles[fileKey] = _captureBefore(path!);
     }
     final kind = AgyToolClassifier.classify(name, parameters).kind;
-    if (path != null && kind == ToolKind.edit && !done) {
-      unawaited(beforeEdit?.call(path));
-    }
     final isTaskTool = _isTaskTool(name);
     final taskAction = _string(parameters['Action'] ?? parameters['action'])?.toLowerCase();
     final taskId = _taskId(parameters, output);
@@ -502,7 +495,6 @@ final class AgyTranslator {
       final payload = _reportedEditPayloads[id];
       final editBefore = original ?? payload?.before;
       final editAfter = newContent ?? payload?.after;
-      unawaited(afterEdit?.call(path));
       unawaited(
         _reportFile(
           path,
