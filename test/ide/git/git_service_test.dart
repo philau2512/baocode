@@ -229,6 +229,28 @@ void main() {
     expect(log.first.subject, 'Everything');
   }, skip: hasGit ? false : 'Git is not installed');
 
+  test('commitPaths stays clean when pre-commit hook modifies committed files', () async {
+    final hookDir = Directory(p.join(root, '.git', 'hooks'));
+    await hookDir.create(recursive: true);
+    await git(['config', '--unset', 'core.hooksPath']);
+    final hookFile = File(p.join(hookDir.path, 'pre-commit'));
+    await hookFile.writeAsString(
+      '#!/bin/sh\n'
+      'echo "hook" >> lib/a.dart\n'
+      'git add lib/a.dart\n',
+    );
+    if (!Platform.isWindows) {
+      await Process.run('chmod', ['+x', hookFile.path]);
+    }
+
+    final service = IdeGitService(root);
+    await write('lib/a.dart', 'content without newline');
+    await service.commitPaths('Commit with hook', [p.join(root, 'lib/a.dart')]);
+
+    final status = await service.status();
+    expect(status?.resources.where((e) => e.path.contains('a.dart')), isEmpty);
+  }, skip: hasGit ? false : 'Git is not installed');
+
   test('an image is read whole at HEAD and in the index', () async {
     final service = IdeGitService(root);
     // Bytes Git takes for binary, of no multiple of 4, and not deflated

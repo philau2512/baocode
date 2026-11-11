@@ -601,6 +601,12 @@ class IdeGitService {
       ]),
       'Cannot commit.',
     );
+    if (relative.isNotEmpty) {
+      _check(
+        await _git(['reset', '-q', '--', ...relative]),
+        'Cannot commit.',
+      );
+    }
   }
 
   /// Commits [paths] as they are in the working tree and each of
