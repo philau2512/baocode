@@ -606,6 +606,13 @@ class IdeGitService {
         await _git(['reset', '-q', '--', ...relative]),
         'Cannot commit.',
       );
+      await _git([
+        'update-index',
+        '-q',
+        '--really-refresh',
+        '--',
+        ...relative,
+      ]);
     }
   }
 
@@ -674,6 +681,15 @@ class IdeGitService {
       await _git(['reset', '-q', '--', ...whole, ...parts]),
       'Cannot commit.',
     );
+    if (whole.isNotEmpty) {
+      await _git([
+        'update-index',
+        '-q',
+        '--really-refresh',
+        '--',
+        ...whole,
+      ]);
+    }
   }
 
   /// Rolls [paths] back to HEAD, index and working tree both
