@@ -15,23 +15,30 @@ import '../link/workspace_bridge.dart' show WorkspaceBridge;
 import '../models/image_api.dart' show imageMediaType;
 import '../workspace/workspace.dart';
 import 'bot.dart';
+import 'bot_life.dart';
 import 'bot_pacer.dart' show BotEventKind, botTime;
 import 'bot_watch.dart';
+import 'bot_world.dart';
 import 'bots.dart';
 
 /// Which bots a tool of theirs is for: those trusted with [level]; only
 /// the assistant, if [assistant]. One that keeps what is in a bot's files
 /// ([files]) is not for a bot that works on the computer: it keeps its
-/// files itself, with Claude Code's tools.
+/// files itself, with Claude Code's tools. The world's ([world]) is for
+/// none of them.
 class BotToolAccess {
-  const BotToolAccess({this.ability, this.assistant = false});
+  const BotToolAccess({this.ability, this.assistant = false}) : world = false;
+  const BotToolAccess.world() : ability = null, assistant = false, world = true;
 
   /// What a bot needs on for it; none for any bot.
   final BotAbility? ability;
   final bool assistant;
+  final bool world;
 
   bool allows(Bot bot) =>
-      (!assistant || bot.assistant) && (ability == null || bot.can(ability!));
+      !world &&
+      (!assistant || bot.assistant) &&
+      (ability == null || bot.can(ability!));
 }
 
 /// The bots' tools (`mcp__baocode__bot_*`): the user's agents seen,
@@ -551,15 +558,24 @@ abstract final class BotTools {
       (
         tool(
           'bot_remember',
-          'Keeps what you remember across conversations: about the user, or '
+          'Keeps what you remember across conversations: about the user; '
               'about yourself (what you said you like, did or think; what '
-              'your picture shows), to stay the same person. "add" a line, '
-              'or "replace" all of it with what you give.',
+              'your picture shows), to stay the same person; how you are '
+              'now ("now": your mood, what you are up to, in a line, in place '
+              'of the last); or about a person you know ("person", named in '
+              '"who": what you think of them, what happened between you). '
+              '"add" a line, or "replace" all of it with what you give.',
           {
             'about': {
               'type': 'string',
-              'enum': ['user', 'self'],
-              'description': 'Whose: the user\'s (if none) or yours.',
+              'enum': ['user', 'self', 'now', 'person'],
+              'description':
+                  'Whose: the user\'s (if none), yours, how you '
+                  'are now, or a person\'s.',
+            },
+            'who': {
+              'type': 'string',
+              'description': 'The person, by name (for "person").',
             },
             'action': {
               'type': 'string',
@@ -569,8 +585,17 @@ abstract final class BotTools {
           },
           (input, call) async {
             final bot = botOf(call);
-            final self = input['about'] == 'self';
             final given = (input['text'] as String? ?? '').trim();
+            switch (input['about']) {
+              case 'now':
+                bots.setNow(bot, given);
+                return 'Noted.';
+              case 'person':
+                final who = text(input, 'who');
+                bots.notePerson(bot, who, given);
+                return 'Noted, of $who.';
+            }
+            final self = input['about'] == 'self';
             final kept = (self ? bots.selfNotes(bot) : bots.memory(bot)).trim();
             final memory = input['action'] == 'replace'
                 ? given
@@ -588,6 +613,104 @@ abstract final class BotTools {
           required: ['text'],
         ),
         const BotToolAccess(),
+      ),
+      (
+        tool(
+          ChatCodec.botSendTool,
+          'Sends a message somewhere other than where you are answering '
+          'now: to the user in private while you are in a group (they '
+          'asked you to write to them, say), or to one of your groups '
+          'from your chat with the user (they asked you to pass '
+          'something on). It may not go: then you are told why, and it '
+          'is yours to say so, or not.',
+          {
+            'to': {
+              'type': 'string',
+              'description':
+                  '"${ChatCodec.botToUser}": the user, in your chat with '
+                  'them. Else a group, by its name or id (WORLD.md).',
+            },
+            'text': {
+              'type': 'string',
+              'description': 'What you say: a line or two, as in a chat.',
+            },
+          },
+          (input, call) async {
+            final bot = botOf(call);
+            final to = text(input, 'to');
+            final said = text(input, 'text');
+            if (to == ChatCodec.botToUser) {
+              if (bots.groups.answering(bot.id) == null) {
+                throw StateError(
+                  'You are in your chat with the user now: say it in your '
+                  'reply, not with this tool.',
+                );
+              }
+              if (bots.world.sendsPrivately(bot) case final why?) {
+                throw StateError('Not sent: $why.');
+              }
+              return 'Sent to the user, in your chat with them.';
+            }
+            final group =
+                bots.groups.byId(to) ??
+                bots.groups.groups
+                    .where((g) => g.name == to && g.members.contains(bot.id))
+                    .firstOrNull ??
+                (throw StateError('You are in no group $to.'));
+            final message = bots.groups.say(group.id, bot.id, said);
+            return 'Said in "${group.name}" (#${message.seq}).';
+          },
+          required: ['to', 'text'],
+          summary: (input, _) => '${input['to'] ?? ''}',
+        ),
+        const BotToolAccess(),
+      ),
+      (
+        tool(
+          BotWorld.wakeTool,
+          'Wakes a bot: in a group, to read what is new there and answer if '
+          'it will; or in private, with something on its mind for the user. '
+          'It is told why, and decides itself. Tells you if it does not go, '
+          'and why.',
+          {
+            'who': {
+              'type': 'string',
+              'description': 'The bot, by name (${BotLife.world}).',
+            },
+            'where': {
+              'type': 'string',
+              'description':
+                  'A group, by its id or name; "${BotWorld.inPrivate}" for its '
+                  'chat with the user.',
+            },
+            'after': {
+              'type': 'string',
+              'description':
+                  'How long from now: "0s", "3s", "2m", "3h". Now if none.',
+            },
+            'why': {
+              'type': 'string',
+              'description': 'What happened, in a few words of fact.',
+            },
+          },
+          (input, call) async => bots.world.wake(
+            who: text(input, 'who'),
+            where: text(input, 'where'),
+            after: switch (input['after']) {
+              null => Duration.zero,
+              final after =>
+                BotWorld.duration('$after') ??
+                    (throw ArgumentError(
+                      'after: "$after" is not a time from now ("5s", "2m").',
+                    )),
+            },
+            why: (input['why'] as String? ?? '').trim(),
+          ),
+          required: ['who', 'where', 'why'],
+          summary: (input, _) =>
+              '${input['who'] ?? ''} · ${input['where'] ?? ''}',
+        ),
+        const BotToolAccess.world(),
       ),
       (
         tool(
@@ -760,9 +883,20 @@ abstract final class BotTools {
             },
             'identity': {
               'type': 'string',
-              'description': 'Who it is, to it: "you are…".',
+              'description':
+                  'Who it is, to it: "you are…". A whole person, not a '
+                  'line: their age, what they do and where, what their days '
+                  'are like (when they sleep, work, go out), what they care '
+                  'about and dislike, their habits and flaws, what they are '
+                  'to the user. A few paragraphs.',
             },
-            'style': {'type': 'string', 'description': 'How it talks.'},
+            'style': {
+              'type': 'string',
+              'description':
+                  'How it talks: how long its messages, its words and '
+                  'tics, its emoji or none, how it is when it is busy, '
+                  'tired, annoyed.',
+            },
           },
           (input, call) async {
             final me = freshOf(call);
@@ -796,6 +930,8 @@ abstract final class BotTools {
               abilities: had?.abilities ?? const {},
               proactive: had?.proactive ?? const BotProactive(),
               by: me,
+              // A new one only chats, as the user is told (they say more).
+              chatOnly: had == null ? true : null,
             );
             return had == null
                 ? 'Made ${saved.name} (${saved.id}). It may do nothing more '
