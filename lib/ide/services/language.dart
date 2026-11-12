@@ -100,9 +100,12 @@ class LanguageService extends ChangeNotifier {
     for (final doc in workspace.documents) {
       if (doc.path == path) return doc.text;
     }
-    return workspace.files.read(path);
+    try {
+      return await workspace.files.read(path);
+    } catch (_) {
+      return null;
+    }
   }
-
   /// The display language can be read: what waited for it is done.
   void localized() {
     if (_localized) return;

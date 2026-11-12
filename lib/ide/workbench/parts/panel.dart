@@ -180,6 +180,10 @@ class PanelPart extends StatelessWidget {
     for (final doc in options.workspace.documents) {
       if (doc.path == path) return doc.text;
     }
-    return options.workspace.files.read(path);
+    try {
+      return await options.workspace.files.read(path);
+    } catch (_) {
+      return null;
+    }
   }
 }

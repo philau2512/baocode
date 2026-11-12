@@ -206,4 +206,120 @@ void main() {
     await tester.pump();
     expect(find.text('f499.txt'), findsOneWidget);
   });
+
+  group('the sash', () {
+    final sash = find.byKey(const ValueKey('activity-strip-sash'));
+    double treeRows(WidgetTester tester) =>
+        tester.getSize(find.byType(ChangeTree)).height /
+        IdeListColors.rowHeight;
+
+    testWidgets('none while every row shows', (tester) async {
+      // lib/src, its two files and README.md: four rows.
+      await pump(tester, changes);
+      await expand(tester);
+      expect(treeRows(tester), 4);
+      expect(sash, findsNothing);
+    });
+
+    testWidgets('dragged, as high as its rows; double-clicked, seven again', (
+      tester,
+    ) async {
+      await pump(tester, [
+        for (var i = 0; i < 10; i++)
+          FileChange(path: '/p/f$i.txt', added: 1, removed: 0),
+      ]);
+      expect(sash, findsNothing);
+      await expand(tester);
+      expect(treeRows(tester), 7);
+      await tester.drag(sash, const Offset(0, -500));
+      await tester.pumpAndSettle();
+      expect(treeRows(tester), 10);
+
+      await tester.drag(sash, Offset(0, IdeListColors.rowHeight * 3));
+      await tester.pumpAndSettle();
+      expect(treeRows(tester), 7);
+
+      await tester.drag(sash, Offset(0, IdeListColors.rowHeight * 2));
+      await tester.pumpAndSettle();
+      expect(treeRows(tester), 5);
+
+      await tester.tap(sash);
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.tap(sash);
+      await tester.pumpAndSettle();
+      expect(treeRows(tester), 7);
+    });
+
+    testWidgets('a folder closed, from the rows still shown', (tester) async {
+      // lib, its ten files and two at the top: thirteen rows.
+      await pump(tester, [
+        for (var i = 0; i < 10; i++)
+          FileChange(path: '/p/lib/f$i.txt', added: 1, removed: 0),
+        const FileChange(path: '/p/a.txt', added: 1, removed: 0),
+        const FileChange(path: '/p/b.txt', added: 1, removed: 0),
+      ]);
+      await expand(tester);
+      await tester.drag(sash, const Offset(0, -1000));
+      await tester.pumpAndSettle();
+      expect(treeRows(tester), 13);
+
+      await tester.tap(find.text('lib'));
+      await tester.pump();
+      expect(treeRows(tester), 3);
+      // Shorter at once, not after the ten rows it no longer has.
+      await tester.drag(sash, Offset(0, IdeListColors.rowHeight));
+      await tester.pumpAndSettle();
+      expect(treeRows(tester), 2);
+    });
+
+    testWidgets('toggles between tree and list view', (tester) async {
+      await pump(tester, [
+        const FileChange(path: '/p/src/main/a.ts', added: 2, removed: 0),
+        const FileChange(path: '/p/src/main/b.ts', added: 5, removed: 0),
+      ]);
+      await expand(tester);
+
+      // Initially Tree view: folder 'src/main' is present
+      var labels = tester
+          .widgetList<IdeResourceLabel>(find.byType(IdeResourceLabel))
+          .map((label) => (label.name, label.description))
+          .toList();
+      expect(labels, [
+        ('src/main', null),
+        ('a.ts', null),
+        ('b.ts', null),
+      ]);
+      expect(find.byIcon(Codicons.listFlat), findsOneWidget);
+
+      // Toggle to List view
+      await tester.tap(find.byIcon(Codicons.listFlat));
+      await tester.pumpAndSettle();
+
+      // In List view: folders are gone, files are listed flat with directory description
+      labels = tester
+          .widgetList<IdeResourceLabel>(find.byType(IdeResourceLabel))
+          .map((label) => (label.name, label.description))
+          .toList();
+      expect(labels, [
+        ('a.ts', 'src/main'),
+        ('b.ts', 'src/main'),
+      ]);
+      expect(find.byIcon(Codicons.listTree), findsOneWidget);
+
+      // Toggle back to Tree view
+      await tester.tap(find.byIcon(Codicons.listTree));
+      await tester.pumpAndSettle();
+
+      labels = tester
+          .widgetList<IdeResourceLabel>(find.byType(IdeResourceLabel))
+          .map((label) => (label.name, label.description))
+          .toList();
+      expect(labels, [
+        ('src/main', null),
+        ('a.ts', null),
+        ('b.ts', null),
+      ]);
+      expect(find.byIcon(Codicons.listFlat), findsOneWidget);
+    });
+  });
 }

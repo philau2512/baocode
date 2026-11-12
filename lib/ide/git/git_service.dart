@@ -601,6 +601,19 @@ class IdeGitService {
       ]),
       'Cannot commit.',
     );
+    if (relative.isNotEmpty) {
+      _check(
+        await _git(['reset', '-q', '--', ...relative]),
+        'Cannot commit.',
+      );
+      await _git([
+        'update-index',
+        '-q',
+        '--really-refresh',
+        '--',
+        ...relative,
+      ]);
+    }
   }
 
   /// Commits [paths] as they are in the working tree and each of
@@ -668,6 +681,15 @@ class IdeGitService {
       await _git(['reset', '-q', '--', ...whole, ...parts]),
       'Cannot commit.',
     );
+    if (whole.isNotEmpty) {
+      await _git([
+        'update-index',
+        '-q',
+        '--really-refresh',
+        '--',
+        ...whole,
+      ]);
+    }
   }
 
   /// Rolls [paths] back to HEAD, index and working tree both

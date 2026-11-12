@@ -59,7 +59,13 @@ final class AgyToolClassifier {
         lower == 'execute_browser_javascript') {
       return const AgyToolDescriptor(kind: ToolKind.browser);
     }
-    if (_any(lower, const {'call_mcp_tool', 'mcp_tool'})) {
+    if (_any(lower, const {
+          'call_mcp_tool',
+          'mcp_tool',
+          'list_resources',
+          'read_resource',
+        }) ||
+        lower.startsWith('mcp_')) {
       return const AgyToolDescriptor(kind: ToolKind.mcp);
     }
     if (_any(lower, const {
@@ -85,7 +91,11 @@ final class AgyToolClassifier {
     if (_any(lower, const {'generate_image', 'capture_browser_screenshot'})) {
       return const AgyToolDescriptor(kind: ToolKind.image);
     }
-    if (_any(lower, const {'invoke_subagent', 'browser_subagent'})) {
+    if (_any(lower, const {
+      'invoke_subagent',
+      'browser_subagent',
+      'define_subagent',
+    })) {
       return const AgyToolDescriptor(kind: ToolKind.agent);
     }
     return AgyToolDescriptor(

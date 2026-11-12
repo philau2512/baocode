@@ -166,12 +166,18 @@ abstract final class AppColors {
   static const claude = Color(0xFFD97857);
 
   /// `textPreformat.foreground`.
-  static Color get inlineCode => _colors['textPreformat.foreground'];
+  static Color get inlineCode {
+    final color = _colors['textPreformat.foreground'];
+    if (_colors.dark &&
+        (color == const Color(0xFFD0D0D0) ||
+            !_colors.theme.defines('textPreformat.foreground'))) {
+      return const Color(0xFFE5C07B);
+    }
+    return color;
+  }
 
-  /// `textPreformat.background`. See-through in the default themes: a
-  /// selection is painted under the text, and shows through it as on the
-  /// web.
-  static Color get inlineCodeBackground => _colors['textPreformat.background'];
+  /// `textPreformat.background`.
+  static Color get inlineCodeBackground => Colors.transparent;
 
   /// Selected text's background: `editor.selectionBackground`, see-through
   /// (see [seeThroughSelection]), for editors that may paint it over the

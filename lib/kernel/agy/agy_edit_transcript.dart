@@ -18,17 +18,28 @@ final class AgyEditTranscriptReader {
   AgyEditTranscriptReader({this.home});
 
   final String? home;
-  final Map<String, Future<Map<String, AgyEditSnapshot>>> _reads = {};
+  final Map<String, Future<Map<String, List<AgyEditSnapshot>>>> _reads = {};
 
   Future<AgyEditSnapshot?> read({
     required String conversation,
     required String path,
+    String? target,
+    int? editIndex,
   }) async {
     if (conversation.isEmpty) return null;
     final future = _reads[conversation] ??= _read(conversation);
     try {
       final snapshots = await future;
-      return snapshots[_pathKey(path)];
+      final list = snapshots[_pathKey(path)];
+      if (list == null || list.isEmpty) return null;
+      if (target != null && target.trim().isNotEmpty) {
+        final match = list.where((s) => s.before == target).firstOrNull;
+        if (match != null) return match;
+      }
+      if (editIndex != null && editIndex >= 0 && editIndex < list.length) {
+        return list[editIndex];
+      }
+      return list.last;
     } finally {
       // Share only an in-flight scan. A later edit must rescan, otherwise it
       // could receive an older snapshot for the same file.
@@ -38,7 +49,7 @@ final class AgyEditTranscriptReader {
     }
   }
 
-  Future<Map<String, AgyEditSnapshot>> _read(String conversation) async {
+  Future<Map<String, List<AgyEditSnapshot>>> _read(String conversation) async {
     final base = home ??
         Platform.environment['USERPROFILE'] ??
         Platform.environment['HOME'];
@@ -54,7 +65,7 @@ final class AgyEditTranscriptReader {
       'transcript_full.jsonl',
     ));
     if (!await transcript.exists()) return const {};
-    final snapshots = <String, AgyEditSnapshot>{};
+    final snapshots = <String, List<AgyEditSnapshot>>{};
     try {
       await for (final line in transcript
           .openRead()
@@ -63,17 +74,29 @@ final class AgyEditTranscriptReader {
         final record = jsonDecode(line);
         if (record is! Map || record['tool_calls'] is! List) continue;
         for (final call in record['tool_calls'] as List) {
-          if (call is! Map || call['name'] != 'edit_file') continue;
+          if (call is! Map) continue;
+          final name = call['name'];
+          if (name != 'edit_file' && name != 'write_file') continue;
           final args = call['args'];
           if (args is! Map) continue;
-          final path = args['Path'] ?? args['path'];
-          final before = args['Target'] ?? args['target'];
-          final after = args['Replacement'] ?? args['replacement'];
-          if (path is String && before is String && after is String) {
-            snapshots[_pathKey(path)] = AgyEditSnapshot(
-              before: before,
-              after: after,
-            );
+          final rawPath = args['Path'] ?? args['path'];
+          if (rawPath is! String) continue;
+          final path = _cleanPath(rawPath);
+          if (name == 'edit_file') {
+            final before = args['Target'] ?? args['target'];
+            final after = args['Replacement'] ?? args['replacement'];
+            if (before is String && after is String) {
+              snapshots
+                  .putIfAbsent(_pathKey(path), () => <AgyEditSnapshot>[])
+                  .add(AgyEditSnapshot(before: before, after: after));
+            }
+          } else if (name == 'write_file') {
+            final after = args['Content'] ?? args['content'];
+            if (after is String) {
+              snapshots
+                  .putIfAbsent(_pathKey(path), () => <AgyEditSnapshot>[])
+                  .add(AgyEditSnapshot(before: '', after: after));
+            }
           }
         }
       }
@@ -87,10 +110,22 @@ final class AgyEditTranscriptReader {
 Future<AgyEditSnapshot?> readAgyEditSnapshot({
   required String conversation,
   required String path,
+  String? target,
+  int? editIndex,
   String? home,
 }) => AgyEditTranscriptReader(home: home).read(
   conversation: conversation,
   path: path,
+  target: target,
+  editIndex: editIndex,
 );
 
-String _pathKey(String path) => path.replaceAll('\\', '/').toLowerCase();
+String _cleanPath(String path) {
+  var p = path.trim();
+  if (p.startsWith('"') && p.endsWith('"') && p.length >= 2) {
+    p = p.substring(1, p.length - 1).trim();
+  }
+  return p;
+}
+
+String _pathKey(String path) => _cleanPath(path).replaceAll('\\', '/').toLowerCase();

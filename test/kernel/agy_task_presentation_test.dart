@@ -95,5 +95,74 @@ void main() {
       expect(info!.label, 'Stopped subagents');
       expect(info.target, 'all subagents');
     });
+
+    test('resolves command task metadata for manage_task status', () {
+      final tasks = {
+        'task-150': const AgyTaskInfo(
+          id: 'conv-id/task-150',
+          summary: 'Run gradle testClasses to verify',
+          command: 'cd sea-turtle-crm-service && .\\gradlew.bat testClasses',
+          kind: 'command',
+        ),
+      };
+      final info = AgyTaskPresentation.parse(
+        'manage_task',
+        {
+          'Action': 'status',
+          'TaskId': 'conv-id/task-150',
+        },
+        output: 'Task: conv-id/task-150\nStatus: RUNNING',
+        taskLookup: (id) => tasks[id],
+      );
+      expect(info, isNotNull);
+      expect(info!.label, 'Checked task');
+      expect(info.target, 'Run gradle testClasses to verify (task-150)');
+      expect(info.detail, 'running');
+    });
+
+    test('resolves timer task metadata for manage_task kill', () {
+      final tasks = {
+        'task-154': const AgyTaskInfo(
+          id: 'conv-id/task-154',
+          prompt: 'Check task-150 status',
+          duration: '5s',
+          kind: 'timer',
+        ),
+      };
+      final info = AgyTaskPresentation.parse(
+        'manage_task',
+        {
+          'Action': 'kill',
+          'TaskId': 'conv-id/task-154',
+        },
+        taskLookup: (id) => tasks[id],
+      );
+      expect(info, isNotNull);
+      expect(info!.label, 'Cancelled timer');
+      expect(info.target, 'Check task-150 status (5s)');
+    });
+
+    test('cleans long commands when summary is absent', () {
+      final tasks = {
+        'task-159': const AgyTaskInfo(
+          id: 'conv-id/task-159',
+          command:
+              'cd sea-turtle-crm-service && .\\gradlew.bat test --tests com.crb.crm.access.api.RoutePagingTest',
+          kind: 'command',
+        ),
+      };
+      final info = AgyTaskPresentation.parse(
+        'manage_task',
+        {
+          'Action': 'kill',
+          'TaskId': 'conv-id/task-159',
+        },
+        taskLookup: (id) => tasks[id],
+      );
+      expect(info, isNotNull);
+      expect(info!.label, 'Stopped command');
+      expect(info.target, contains('.\\gradlew.bat test'));
+      expect(info.target, contains('(task-159)'));
+    });
   });
 }

@@ -7,6 +7,7 @@ import 'package:baocode/chat/chat_find.dart';
 import 'package:baocode/chat/side_panel/file_link_menu.dart';
 import 'package:baocode/chat/side_panel/file_open.dart';
 import 'package:baocode/chat/widgets/markdown_view.dart';
+import 'package:baocode/theme/app_theme.dart';
 import 'package:baocode/theme/material_file_icons.dart';
 
 Future<void> pumpMarkdown(WidgetTester tester, String data) =>
@@ -56,6 +57,47 @@ void main() {
           if (span.recognizer != null) span.text,
       };
       expect(linked, {'mail'});
+    });
+
+    testWidgets('a file link wrapping inline code preserves its file name text and accent color', (tester) async {
+      final existence = FileExistence((path) async => true);
+      addTearDown(existence.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: FileOpenScope(
+              root: '/p',
+              onOpen: (_) {},
+              existence: existence,
+              child: const MarkdownView(
+                'In [`OrderShippingFeeSection.tsx`](file:///p/OrderShippingFeeSection.tsx) '
+                'and regular code `invoice.invoiceNumber`.',
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final textSpans = <TextSpan>[];
+      for (final text in tester.widgetList<RichText>(find.byType(RichText))) {
+        text.text.visitChildren((span) {
+          if (span is TextSpan) textSpans.add(span);
+          return true;
+        });
+      }
+
+      final fileLinkSpan = textSpans.firstWhere(
+        (s) => s.text?.contains('OrderShippingFeeSection.tsx') ?? false,
+      );
+      expect(fileLinkSpan.text, contains('OrderShippingFeeSection.tsx'));
+      expect(fileLinkSpan.style?.color, AppColors.accent);
+
+      final regularCodeSpan = textSpans.firstWhere(
+        (s) => s.text?.contains('invoice.invoiceNumber') ?? false,
+      );
+      expect(regularCodeSpan.text, contains('invoice.invoiceNumber'));
+      expect(regularCodeSpan.style?.color, AppColors.inlineCode);
     });
 
     testWidgets('a link to a file, and code naming one, have its icon and '

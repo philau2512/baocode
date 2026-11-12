@@ -45,12 +45,18 @@ class CommandStep extends StatelessWidget {
   /// Anything to open to: the command may still be on its way.
   bool get _opens => command.trim().isNotEmpty || output.trim().isNotEmpty;
 
-  /// What the header says it is: its description, or its first line.
-  static String title(String command, String? description) =>
-      switch (description?.trim()) {
-        final text? when text.isNotEmpty => text,
-        _ => command.trim().split('\n').first,
-      };
+  /// What the header says it is: its description, or its command text.
+  static String title(String command, String? description) {
+    final text = description?.trim();
+    if (text != null && text.isNotEmpty) return text;
+    final lines = command
+        .split('\n')
+        .map((l) => l.trim())
+        .where((l) => l.isNotEmpty)
+        .toList();
+    if (lines.isEmpty) return command.trim();
+    return lines.join(' ');
+  }
 
   /// In [l10n]'s language (English when null).
   static String verb(
@@ -86,6 +92,8 @@ class CommandStep extends StatelessWidget {
         if (expanded && _opens)
           StepBody(
             followEnd: _running,
+            scrollbar: true,
+            maxHeight: 320,
             // Clear of the menu button.
             padding: const EdgeInsets.fromLTRB(12, 10, 36, 10),
             overlay: _CommandMenu(
@@ -109,7 +117,12 @@ class CommandStep extends StatelessWidget {
                   style: stepMono,
                 ),
                 if (printed != null && printed.text.isNotEmpty) ...[
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 10),
+                  Container(
+                    height: 1,
+                    color: AppColors.partBorder,
+                  ),
+                  const SizedBox(height: 10),
                   if (printed.styled)
                     Text.rich(printed.span, style: stepMono)
                   else

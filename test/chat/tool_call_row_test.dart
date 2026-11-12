@@ -73,4 +73,30 @@ BaoCodeApp [L10-L20]''';
     );
     expect(find.text('lib/main.dart:42: AGY'), findsOneWidget);
   });
+
+  testWidgets('renders invoked MCP command and output when expanded', (
+    tester,
+  ) async {
+    const query = 'SELECT id, raw_phone FROM crm_partner WHERE is_deleted = 0';
+    const output = 'id | raw_phone\n---+----------\n 1 | 0901234567';
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: ToolCallRow(
+          kind: ToolKind.mcp,
+          target: query,
+          input: {
+            'ServerName': 'gridex',
+            'ToolName': 'query',
+            'Arguments': {'query': query},
+          },
+          output: output,
+          expanded: true,
+        ),
+      ),
+    );
+
+    expect(find.textContaining('> SELECT id'), findsOneWidget);
+    expect(find.textContaining(query), findsNWidgets(2));
+    expect(find.text(output), findsOneWidget);
+  });
 }

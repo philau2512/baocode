@@ -144,9 +144,9 @@ final class AgySubagentTranscriptReader {
         target: isMessage
             ? 'parent agent'
             : task?.target ??
-                mcp?.target ??
-                (isFilePath ? _baseName(path) : path) ??
-                name,
+                (mcp != null
+                    ? (mcp.target ?? '')
+                    : (isFilePath ? _baseName(path) : path) ?? name),
         path: path,
         detail: task?.detail,
         label: isMessage ? 'Sent message' : task?.label ?? mcp?.label,

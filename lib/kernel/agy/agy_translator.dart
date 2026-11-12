@@ -21,11 +21,10 @@ final class AgyTranslator {
     required this.emit,
     required this.nextSeq,
     this.onTurnEnded,
-    this.beforeEdit,
-    this.afterEdit,
     this.readFile,
     this.readEditSnapshot,
     this.readSubagentTranscript,
+    this.readStepThinking,
     this.onTasksChanged,
     this.sendInteractionAnswer,
   });
@@ -36,37 +35,51 @@ final class AgyTranslator {
   final void Function(KernelEvent event) emit;
   final int Function() nextSeq;
   final void Function(String turnId)? onTurnEnded;
-  final Future<void>? Function(String path)? beforeEdit;
-  final Future<void>? Function(String path)? afterEdit;
   final Future<String?> Function(String path)? readFile;
-  final Future<({String before, String after})?> Function(String path)?
+  final Future<({String before, String after})?> Function(
+    String path, {
+    String? target,
+  })?
   readEditSnapshot;
   final Future<AgySubagentTranscript> Function(String conversation)?
   readSubagentTranscript;
+  final Future<String?> Function(String conversation, Object? stepIndex)?
+  readStepThinking;
   final void Function(List<KernelTask> tasks)? onTasksChanged;
   late final AgyInteractionParser _interactions = AgyInteractionParser(
     emit,
     nextSeq,
   );
   final Map<String, Future<String?>> _beforeFiles = {};
-  final Map<String, String> _reportedOriginals = {};
+  final Map<String, ({String? before, String? after})> _reportedEditPayloads =
+      {};
   final Map<String, AgentItem> _agents = {};
   final Map<String, String> _agentIdsByTool = {};
   final Map<String, List<ChatItem>> _agentChildren = {};
   final Map<String, String> _agentParents = {};
   final Map<String, KernelTask> _tasks = {};
+  final Map<String, AgyTaskInfo> _taskInfos = {};
   final Map<String, String> _interactionTools = {};
+  final Set<String> _recordedThinkingSteps = {};
 
   String? conversationId;
   String? turnId;
   String? textId;
   int textLength = 0;
+  int _textCount = 0;
+  String? thinkingId;
+  int thoughtLength = 0;
+  int _thoughtCount = 0;
+  DateTime? _thoughtStartedAt;
+  final StringBuffer _thoughtBuffer = StringBuffer();
   DateTime? startedAt;
 
   /// Maps AGY's tool identity to the stable BaoCode item id. AGY emits
   /// multiple `step_update` events for one tool, so the id must not be based
   /// on the number of updates received.
   final Map<String, String> _toolIds = {};
+  final Map<String, String> _activeToolIds = {};
+  int _toolCount = 0;
   final Map<String, DateTime> _tools = {};
 
   void answer(String requestId, InteractionAnswer answer) {
@@ -84,10 +97,20 @@ final class AgyTranslator {
     turnId = null;
     textId = null;
     textLength = 0;
+    _textCount = 0;
+    thinkingId = null;
+    thoughtLength = 0;
+    _thoughtCount = 0;
+    _thoughtStartedAt = null;
+    _thoughtBuffer.clear();
     startedAt = null;
+    _toolCount = 0;
     _tools.clear();
     _toolIds.clear();
-    _reportedOriginals.clear();
+    _activeToolIds.clear();
+    _reportedEditPayloads.clear();
+    _beforeFiles.clear();
+    _recordedThinkingSteps.clear();
   }
 
   void accept(Map<String, Object?> message) {
@@ -104,12 +127,33 @@ final class AgyTranslator {
 
   void _step(Map<String, Object?> step) {
     final kind = _string(step['step_type']) ?? _string(step['type']);
-    if (kind == 'agent_response') {
+    final thinkingDelta = _string(step['thinking_delta']) ??
+        _string(step['delta_thinking']);
+    final thinkingContent = _string(step['thinking']);
+
+    final usage = _map(step['usage']);
+    final thinkingTokens = _int(usage['thinking_tokens']) ??
+        _int(usage['thinkingTokens']) ??
+        _int(usage['thinking_output_tokens']) ??
+        0;
+
+    if (thinkingDelta != null && thinkingDelta.isNotEmpty) {
+      _thinking(step, thinkingDelta);
+    } else if (kind == 'thinking' || kind == 'thought') {
+      final thought = _string(step['text_delta']) ?? thinkingContent ?? '';
+      if (thought.isNotEmpty) _thinking(step, thought);
+    } else if (kind == 'agent_response') {
+      if (thinkingContent != null && thinkingContent.isNotEmpty && thinkingId == null) {
+        _thinking(step, thinkingContent);
+        _completeThinking();
+      } else if (thinkingId == null) {
+        _checkAndRecordThinkingFromDisk(step);
+      }
       _text(step);
     } else if (kind == 'tool') {
+      _completeThinking();
       _tool(step);
     }
-    final usage = _map(step['usage']);
     if (usage.isNotEmpty) _reportUsage(usage);
   }
 
@@ -118,11 +162,115 @@ final class AgyTranslator {
     beginTurn('agy-turn-${DateTime.now().microsecondsSinceEpoch}');
   }
 
+  void _completeThinking() {
+    if (thinkingId == null) return;
+    final id = thinkingId!;
+    final started = _thoughtStartedAt ?? startedAt ?? DateTime.now();
+    final seconds = math.max(1, DateTime.now().difference(started).inSeconds);
+    final tokens = math.max(1, (thoughtLength / 3.5).round());
+    emit(
+      ItemUpserted(
+        nextSeq(),
+        id,
+        ThinkingItem(
+          text: _thoughtBuffer.toString(),
+          tokens: tokens,
+          seconds: seconds,
+          startedAt: started,
+        ),
+      ),
+    );
+    emit(ItemCompleted(nextSeq(), id));
+    thinkingId = null;
+    thoughtLength = 0;
+    _thoughtStartedAt = null;
+    _thoughtBuffer.clear();
+  }
+
+  void _checkAndRecordThinkingFromDisk(Map<String, Object?> step) {
+    final stepIndex = step['step_index'];
+    final stepKey = '${stepIndex ?? _thoughtCount}';
+    if (!_recordedThinkingSteps.add(stepKey)) return;
+
+    final convId = conversationId;
+    if (convId == null || convId.isEmpty || readStepThinking == null) return;
+
+    unawaited(() async {
+      var text = await readStepThinking!(convId, stepIndex);
+      if (text == null || text.trim().isEmpty) {
+        await Future.delayed(const Duration(milliseconds: 100));
+        text = await readStepThinking!(convId, stepIndex);
+      }
+      if (text != null && text.trim().isNotEmpty) {
+        _begin();
+        final id = '$turnId:thinking:${stepIndex ?? _thoughtCount++}';
+        final duration = _double(step['duration_seconds']) ??
+            _int(step['duration_seconds'])?.toDouble() ??
+            1.0;
+        final seconds = math.max(1, duration.round());
+        final tokens = math.max(1, (text.length / 3.5).round());
+        final started = DateTime.now().subtract(Duration(seconds: seconds));
+
+        emit(
+          ItemUpserted(
+            nextSeq(),
+            id,
+            ThinkingItem(
+              text: text.trim(),
+              tokens: tokens,
+              seconds: seconds,
+              startedAt: started,
+            ),
+          ),
+        );
+        emit(ItemCompleted(nextSeq(), id));
+      }
+    }());
+  }
+
+  void _thinking(Map<String, Object?> step, String delta) {
+    if (delta.isEmpty) return;
+    _begin();
+    if (textId != null) {
+      emit(ItemCompleted(nextSeq(), textId!));
+      textId = null;
+      textLength = 0;
+    }
+    final id = thinkingId ??= '$turnId:thinking:${_thoughtCount++}';
+    if (thoughtLength == 0) {
+      _thoughtStartedAt = DateTime.now();
+      emit(
+        ItemUpserted(
+          nextSeq(),
+          id,
+          ThinkingItem(
+            text: '',
+            tokens: 0,
+            startedAt: _thoughtStartedAt,
+          ),
+          streaming: true,
+        ),
+      );
+    }
+    _thoughtBuffer.write(delta);
+    emit(
+      TextDelta(
+        nextSeq(),
+        id,
+        thoughtLength,
+        delta,
+        tokens: math.max(1, ((thoughtLength + delta.length) / 3.5).round()),
+      ),
+    );
+    thoughtLength += delta.length;
+  }
+
   void _text(Map<String, Object?> step) {
     final delta = _string(step['text_delta']) ?? '';
     if (delta.isEmpty) return;
+    _completeThinking();
     _begin();
-    final id = textId ??= '$turnId:assistant';
+    final id = textId ??= '$turnId:assistant:${_textCount++}';
     if (textLength == 0) {
       emit(
         ItemUpserted(
@@ -138,7 +286,13 @@ final class AgyTranslator {
   }
 
   void _tool(Map<String, Object?> step) {
+    _completeThinking();
     _begin();
+    if (textId != null) {
+      emit(ItemCompleted(nextSeq(), textId!));
+      textId = null;
+      textLength = 0;
+    }
     final name = _string(step['tool_name']) ?? _string(step['name']) ?? 'tool';
     final info = _map(step['tool_info']);
     final subagentInfo = _map(step['subagent_info']).isNotEmpty
@@ -148,21 +302,44 @@ final class AgyTranslator {
         ? _map(info['parameters'])
         : _map(step['parameters']).isNotEmpty
         ? _map(step['parameters'])
+        : _map(info['args']).isNotEmpty
+        ? _map(info['args'])
+        : _map(step['args']).isNotEmpty
+        ? _map(step['args'])
         : _decodeParameters(step['arguments']) ??
               _decodeParameters(info['arguments']) ??
+              _decodeParameters(step['args']) ??
+              _decodeParameters(info['args']) ??
               const <String, Object?>{};
-    final toolKey =
+    final explicitId =
         _string(step['tool_id']) ??
         _string(step['id']) ??
         _string(info['tool_id']) ??
-        _string(info['id']) ??
-        '$name:${_string(step['step_index']) ?? parameters.toString()}';
-    final id = _toolIds.putIfAbsent(
-      toolKey,
-      () => '$turnId:tool:${_toolIds.length}',
-    );
-    final interactionId = _interactions.parse(step, info);
-    if (interactionId != null) _interactionTools[interactionId] = name;
+        _string(info['id']);
+    final stepIndex = _string(step['step_index']);
+    final command =
+        _string(parameters['CommandLine']) ?? _string(parameters['command']);
+    final rawPath = _string(parameters['Path']) ?? _string(parameters['path']);
+    final path = rawPath != null ? _cleanPath(rawPath) : null;
+    final fileKey = path == null ? null : _pathKey(path);
+    final scopeKey = '$name:${fileKey ?? command ?? ''}';
+
+    final String id;
+    if (explicitId != null) {
+      id = _toolIds.putIfAbsent(
+        explicitId,
+        () => '$turnId:tool:${_toolCount++}',
+      );
+    } else if (stepIndex != null) {
+      id = _toolIds.putIfAbsent(
+        '$name:step:$stepIndex',
+        () => '$turnId:tool:${_toolCount++}',
+      );
+    } else if (_activeToolIds.containsKey(scopeKey)) {
+      id = _activeToolIds[scopeKey]!;
+    } else {
+      id = '$turnId:tool:${_toolCount++}';
+    }
     final state =
         (_string(step['state']) ??
                 _string(step['status']) ??
@@ -182,6 +359,20 @@ final class AgyTranslator {
       'CANCELLED',
       'CANCELED',
     }.contains(state);
+    if (!done && scopeKey.isNotEmpty) {
+      _activeToolIds[scopeKey] = id;
+    } else if (done) {
+      _activeToolIds.remove(scopeKey);
+    }
+    final interactionId = _interactions.parse(
+      step,
+      info,
+      name: name,
+      parameters: parameters,
+      toolCallId: id,
+      done: done,
+    );
+    if (interactionId != null) _interactionTools[interactionId] = name;
     final failed = const {
       'ERROR',
       'FAILED',
@@ -216,9 +407,6 @@ final class AgyTranslator {
         _string(parameters['replacement']) ??
         _string(parameters['Content']) ??
         _string(parameters['content']);
-    final command =
-        _string(parameters['CommandLine']) ?? _string(parameters['command']);
-    final path = _string(parameters['Path']) ?? _string(parameters['path']);
     final isAgent = _isAgentTool(name);
     _tools.putIfAbsent(id, DateTime.now);
     final agentId =
@@ -232,23 +420,21 @@ final class AgyTranslator {
     if (parentAgent case final parent?) {
       _agentParents[agentId] = parent;
     }
-    final fileKey = path == null ? null : _pathKey(path);
-    if (path != null && original != null) {
-      _reportedOriginals[fileKey!] = original;
-    }
-    if (path != null && newContent != null) {
-      _reportedOriginals['$fileKey:after'] = newContent;
+    if (original != null || newContent != null) {
+      final existing = _reportedEditPayloads[id];
+      _reportedEditPayloads[id] = (
+        before: original ?? existing?.before,
+        after: newContent ?? existing?.after,
+      );
     }
     if (fileKey != null && !_beforeFiles.containsKey(fileKey)) {
       _beforeFiles[fileKey] = _captureBefore(path!);
     }
     final kind = AgyToolClassifier.classify(name, parameters).kind;
-    if (path != null && kind == ToolKind.edit && !done) {
-      unawaited(beforeEdit?.call(path));
-    }
     final isTaskTool = _isTaskTool(name);
-    final taskId = _taskId(parameters, output) ?? id;
-    if (isTaskTool) {
+    final taskAction = _string(parameters['Action'] ?? parameters['action'])?.toLowerCase();
+    final taskId = _taskId(parameters, output);
+    if (isTaskTool && taskId != null && taskAction != 'list') {
       _reportTask(taskId, name: name, state: state, output: output);
     }
     if (isAgent) {
@@ -265,6 +451,40 @@ final class AgyTranslator {
       );
       return;
     }
+    final taskMatch = RegExp(
+      r'with task id:\s*([^\s\n]+)',
+      caseSensitive: false,
+    ).firstMatch(output ?? '');
+    if (taskMatch != null) {
+      final fullId = taskMatch.group(1)!.trim();
+      final shortId = _shortTaskId(fullId);
+      final descMatch = RegExp(
+        r'Task Description:\s*([^\n]+)',
+        caseSensitive: false,
+      ).firstMatch(output ?? '');
+      final desc = descMatch?.group(1)?.trim();
+      final isSchedule = name.toLowerCase() == 'schedule';
+      final summary = _string(parameters['toolSummary']) ??
+          (isSchedule ? _string(parameters['Prompt']) : null) ??
+          desc;
+      final cmd = _string(parameters['CommandLine']) ??
+          _string(parameters['command']) ??
+          (!isSchedule ? desc : null);
+      final prompt = _string(parameters['Prompt']) ??
+          _string(parameters['prompt']);
+      final duration = _string(parameters['DurationSeconds']) ??
+          _string(parameters['duration_seconds']);
+      final info = AgyTaskInfo(
+        id: fullId,
+        summary: summary,
+        command: cmd,
+        prompt: prompt,
+        duration: duration != null ? '${duration}s' : null,
+        kind: isSchedule ? 'timer' : 'command',
+      );
+      _taskInfos[fullId] = info;
+      _taskInfos[shortId] = info;
+    }
     final parsedOutput = AgyOutputParser.parse(output);
     final mcp = kind == ToolKind.mcp || _isPluginTool(name)
         ? AgyMcpPluginParser.parse(name, parameters)
@@ -274,6 +494,7 @@ final class AgyTranslator {
       parameters,
       output: output,
       running: !done && !failed,
+      taskLookup: (tid) => _taskInfos[tid],
     );
     final isFilePath = path != null &&
         (kind == ToolKind.read ||
@@ -282,11 +503,19 @@ final class AgyTranslator {
     final target = taskPresentation?.target ??
         (kind == ToolKind.web
             ? _string(parameters['query']) ?? name
-            : mcp?.target ?? (isFilePath ? _baseName(path!) : path) ?? name);
+            : (mcp != null
+                ? (mcp.target ?? '')
+                : (isFilePath ? _baseName(path) : path) ?? name));
+    final commandSummary = _string(parameters['toolSummary']) ??
+        _string(info['description']) ??
+        _string(step['description']) ??
+        _string(info['summary']) ??
+        _string(step['summary']);
     final item = command != null
         ? TerminalItem(
             command: command,
             output: output ?? '',
+            description: commandSummary,
             status: failed
                 ? CommandStatus.failed
                 : done
@@ -320,14 +549,16 @@ final class AgyTranslator {
       _updateParent(finishedAgent);
     }
     if (path != null && done && kind == ToolKind.edit) {
-      unawaited(afterEdit?.call(path));
+      final payload = _reportedEditPayloads[id];
+      final editBefore = original ?? payload?.before;
+      final editAfter = newContent ?? payload?.after;
       unawaited(
         _reportFile(
           path,
           turnId: turnId,
           itemId: id,
-          before: original,
-          after: newContent,
+          before: editBefore,
+          after: editAfter,
         ),
       );
     }
@@ -372,8 +603,16 @@ final class AgyTranslator {
     return slash >= 0 ? clean.substring(slash + 1) : clean;
   }
 
+  static String _cleanPath(String path) {
+    var p = path.trim();
+    if (p.startsWith('"') && p.endsWith('"') && p.length >= 2) {
+      p = p.substring(1, p.length - 1).trim();
+    }
+    return p;
+  }
+
   static String _pathKey(String path) =>
-      path.replaceAll('\\', '/').toLowerCase();
+      _cleanPath(path).replaceAll('\\', '/').toLowerCase();
 
   static bool _isAgentTool(String name) => const {
     'invoke_subagent',
@@ -401,9 +640,14 @@ final class AgyTranslator {
       _string(input['task_id']) ??
       _string(input['conversation_id']) ??
       RegExp(
-        r'(?:Task ID|Task):\s*([^\s]+)',
+        r'(?:with task id|task id|Task ID|Task):\s*([^\s]+)',
         caseSensitive: false,
       ).firstMatch(output ?? '')?.group(1);
+
+  static String _shortTaskId(String id) {
+    final slash = id.lastIndexOf('/');
+    return slash >= 0 && slash < id.length - 1 ? id.substring(slash + 1) : id;
+  }
 
   static KernelTask _task(
     String id,
@@ -615,16 +859,24 @@ final class AgyTranslator {
     final fullAfter = await readFile?.call(path);
 
     if (before == null || after == null) {
-      final snapshot = await readEditSnapshot?.call(path);
+      final snapshot = await readEditSnapshot?.call(path, target: before);
       before ??= snapshot?.before;
       after ??= snapshot?.after;
     }
-    before ??= _reportedOriginals[key] ?? fullBefore;
-    after ??= _reportedOriginals['$key:after'] ?? fullAfter;
-    final cleanBefore = before?.replaceAll('\r\n', '\n');
+    final payload = _reportedEditPayloads[itemId];
+    final hadExplicitBefore = before != null || payload?.before != null;
+    before ??= payload?.before ?? fullBefore;
+    after ??= payload?.after ?? fullAfter;
+    var cleanBefore = before?.replaceAll('\r\n', '\n');
     final cleanAfter = after?.replaceAll('\r\n', '\n');
     if (cleanAfter == null && cleanBefore == null) return;
-    if (cleanAfter == cleanBefore) return;
+    if (cleanAfter == cleanBefore) {
+      if (!hadExplicitBefore && payload?.after != null) {
+        cleanBefore = '';
+      } else {
+        return;
+      }
+    }
 
     var startLine = 1;
     if (cleanBefore != null && fullBefore != null) {
@@ -676,7 +928,11 @@ final class AgyTranslator {
             : OriginalByPatch(diffResult.diff),
       ),
     );
-    _beforeFiles.remove(key);
+    if (fullAfter != null) {
+      _beforeFiles[key] = Future.value(fullAfter);
+    } else {
+      _beforeFiles.remove(key);
+    }
   }
 
   static ({List<DiffLine> lines, int added, int removed, String diff}) _computeDiff(
@@ -749,6 +1005,7 @@ final class AgyTranslator {
   void _result(Map<String, Object?> result) {
     final current = turnId;
     if (current == null) return;
+    _completeThinking();
     final id = textId;
     if (id != null) emit(ItemCompleted(nextSeq(), id));
     final rawUsage = _map(result['usage']);
@@ -924,4 +1181,6 @@ final class AgyTranslator {
       value is String && value.isNotEmpty ? value : null;
   static int? _int(Object? value) =>
       value is int ? value : int.tryParse('$value');
+  static double? _double(Object? value) =>
+      value is num ? value.toDouble() : double.tryParse('$value');
 }

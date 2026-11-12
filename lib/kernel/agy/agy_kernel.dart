@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -35,8 +36,7 @@ final class AntigravityKernel
         ProvidesCommands,
         LoadsHistory,
         ConfirmsModelSwitch,
-        AcceptsImages,
-        WatchesEdits {
+        AcceptsImages {
   AntigravityKernel(
     this.descriptor,
     this._context, {
@@ -50,10 +50,9 @@ final class AntigravityKernel
       nextSeq: () => nextSeq,
       readFile: _readFile,
       readEditSnapshot: _readEditSnapshot,
-      beforeEdit: (path) => _editWatch?.beforeEdit(path),
-      afterEdit: (path) => _editWatch?.afterEdit(path),
       readSubagentTranscript: (conversation) =>
           _subagentTranscript.inspect(conversation: conversation),
+      readStepThinking: _readStepThinking,
       onTasksChanged: (tasks) => emit(TasksReported(nextSeq, tasks)),
       sendInteractionAnswer: _sendInteractionAnswer,
       onTurnEnded: (turnId) {
@@ -102,10 +101,6 @@ final class AntigravityKernel
       AgySubagentTranscriptReader();
   final AgySubagentTaskReader _subagentTasks = AgySubagentTaskReader();
   final AgyImageStore _images = AgyImageStore();
-
-  @override
-  set editWatch(EditWatch? watch) => _editWatch = watch;
-  EditWatch? _editWatch;
 
   Future<void> _refreshSubagentTasks() async {
     final conversation = _sessionId;
@@ -461,14 +456,16 @@ final class AntigravityKernel
   }
 
   Future<({String before, String after})?> _readEditSnapshot(
-    String path,
-  ) async {
+    String path, {
+    String? target,
+  }) async {
     final conversation = _sessionId;
     if (conversation == null) return null;
     for (var attempt = 0; attempt < 10; attempt++) {
       final snapshot = await _editTranscript.read(
         conversation: conversation,
         path: path,
+        target: target,
       );
       if (snapshot != null) {
         return (before: snapshot.before, after: snapshot.after);
@@ -618,6 +615,67 @@ final class AntigravityKernel
         _turn = null;
       }
     }
+  }
+
+  Future<String?> _readStepThinking(
+    String conversation,
+    Object? stepIndex,
+  ) async {
+    if (conversation.isEmpty) return null;
+    final base = Platform.environment['USERPROFILE'] ??
+        Platform.environment['HOME'];
+    if (base == null) return null;
+    final primary = File(p.join(
+      base,
+      '.gemini',
+      'antigravity-cli',
+      'brain',
+      conversation,
+      '.system_generated',
+      'logs',
+      'transcript.jsonl',
+    ));
+    final fallback = File(p.join(
+      base,
+      '.gemini',
+      'tmp',
+      'brain',
+      conversation,
+      '.system_generated',
+      'logs',
+      'transcript.jsonl',
+    ));
+    final file = await primary.exists()
+        ? primary
+        : await fallback.exists()
+            ? fallback
+            : null;
+    if (file == null) return null;
+
+    try {
+      final lines = await file.readAsLines();
+      for (var i = lines.length - 1; i >= 0; i--) {
+        final line = lines[i].trim();
+        if (line.isEmpty) continue;
+        final json = jsonDecode(line);
+        if (json is! Map) continue;
+        if (stepIndex != null) {
+          if ('${json['step_index']}' == '$stepIndex') {
+            final thinking = json['thinking'] as String?;
+            if (thinking != null && thinking.trim().isNotEmpty) {
+              return thinking.trim();
+            }
+            return null;
+          }
+        } else {
+          final thinking = json['thinking'] as String?;
+          if (thinking != null && thinking.trim().isNotEmpty) {
+            return thinking.trim();
+          }
+        }
+      }
+    } catch (_) {}
+    return null;
   }
 
   static String _imagePrompt(String text, List<String> imagePaths) {

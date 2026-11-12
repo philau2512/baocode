@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import '../../chat/chat_models.dart';
 import '../agent_kernel.dart';
@@ -26,6 +27,7 @@ final class AgyHistory {
   final List<String> _pendingToolIds = [];
   final Map<String, _HistoryTool> _historyTools = {};
   final List<_HistorySubagent> _pendingSubagents = [];
+  final Map<String, AgyTaskInfo> _tasks = {};
   final AgySubagentTranscriptReader _subagentTranscript =
       AgySubagentTranscriptReader();
 
@@ -75,6 +77,9 @@ final class AgyHistory {
   Future<void> _emitStep(Map<String, Object?> step) async {
     final type = '${step['type'] ?? ''}'.toUpperCase();
     final content = _string(step['content']);
+    if (content != null) {
+      _extractTaskNotice(content);
+    }
     if (type == 'USER_INPUT') {
       final visible = _cleanUserContent(content);
       if (visible != null) _emitItem('user', visible, id: step['step_index']);
@@ -82,6 +87,23 @@ final class AgyHistory {
     }
     if (type == 'PLANNER_RESPONSE' || type == 'GENERIC') {
       if (type == 'PLANNER_RESPONSE') {
+        final thinking = _string(step['thinking']);
+        if (thinking != null && thinking.trim().isNotEmpty) {
+          final stepIdx = step['step_index'] ?? _pendingToolIds.length;
+          final thinkId = 'agy-history-$stepIdx:thinking';
+          final tokens = math.max(1, (thinking.length / 3.5).round());
+          emit(
+            ItemUpserted(
+              nextSeq(),
+              thinkId,
+              ThinkingItem(
+                text: thinking.trim(),
+                tokens: tokens,
+                seconds: math.max(1, (tokens / 50).round()),
+              ),
+            ),
+          );
+        }
         _emitToolCalls(step['tool_calls'], step: step);
       }
       if (content != null && !_isInternalEnvelope(content)) {
@@ -250,6 +272,7 @@ final class AgyHistory {
       tool.name,
       tool.input,
       output: output,
+      taskLookup: (id) => _tasks[id],
     );
     final path = _string(tool.input['Path']) ?? _string(tool.input['path']);
     final isFilePath = path != null &&
@@ -259,9 +282,9 @@ final class AgyHistory {
     return ToolCallItem(
       kind: tool.kind,
       target: task?.target ??
-          tool.mcp?.target ??
-          (isFilePath ? _baseName(path) : path) ??
-          tool.name,
+          (tool.mcp != null
+              ? (tool.mcp!.target ?? '')
+              : (isFilePath ? _baseName(path) : path) ?? tool.name),
       path: path,
       detail: task?.detail ??
           (tool.kind == ToolKind.read ? _readRange(tool.input) : null),
@@ -280,10 +303,89 @@ final class AgyHistory {
     final id = _pendingToolIds.removeAt(0);
     final previous = _historyTools[id];
     if (previous == null) return false;
+    _recordCreatedTask(previous, content);
     final output = _toolOutput(content);
     final item = _historyItem(previous, output);
     emit(ItemUpserted(nextSeq(), id, item));
     return true;
+  }
+
+  void _recordCreatedTask(_HistoryTool tool, String content) {
+    final taskMatch = RegExp(
+      r'with task id:\s*([^\s\n]+)',
+      caseSensitive: false,
+    ).firstMatch(content);
+    if (taskMatch == null) return;
+    final fullId = taskMatch.group(1)!.trim();
+    final shortId = _shortTaskId(fullId);
+    final descMatch = RegExp(
+      r'Task Description:\s*([^\n]+)',
+      caseSensitive: false,
+    ).firstMatch(content);
+    final desc = descMatch?.group(1)?.trim();
+
+    final isSchedule = tool.name.toLowerCase() == 'schedule';
+    final summary = _string(tool.input['toolSummary']) ??
+        (isSchedule ? _string(tool.input['Prompt']) : null) ??
+        desc;
+    final command = _string(tool.input['CommandLine']) ??
+        _string(tool.input['command']) ??
+        (!isSchedule ? desc : null);
+    final prompt = _string(tool.input['Prompt']) ??
+        _string(tool.input['prompt']);
+    final duration = _string(tool.input['DurationSeconds']) ??
+        _string(tool.input['duration_seconds']);
+
+    final info = AgyTaskInfo(
+      id: fullId,
+      summary: summary,
+      command: command,
+      prompt: prompt,
+      duration: duration != null ? '${duration}s' : null,
+      kind: isSchedule ? 'timer' : 'command',
+    );
+    _tasks[fullId] = info;
+    _tasks[shortId] = info;
+  }
+
+  void _extractTaskNotice(String content) {
+    final taskMatch = RegExp(
+      r'with task id:\s*([^\s\n]+)',
+      caseSensitive: false,
+    ).firstMatch(content);
+    if (taskMatch == null) return;
+    final fullId = taskMatch.group(1)!.trim();
+    final shortId = _shortTaskId(fullId);
+    if (_tasks.containsKey(fullId)) return;
+    final descMatch = RegExp(
+      r'Task Description:\s*([^\n]+)',
+      caseSensitive: false,
+    ).firstMatch(content);
+    final desc = descMatch?.group(1)?.trim();
+    final isTimer = desc != null && desc.startsWith('Timer:');
+    String? prompt;
+    String? duration;
+    if (isTimer) {
+      final promptMatch = RegExp(r'Prompt:\s*(.*)$').firstMatch(desc);
+      prompt = promptMatch?.group(1)?.trim();
+      final durMatch = RegExp(r'Timer:\s*([^\s,]+)').firstMatch(desc);
+      duration = durMatch?.group(1)?.trim();
+    }
+    final info = AgyTaskInfo(
+      id: fullId,
+      summary: prompt ?? desc,
+      command: !isTimer ? desc : null,
+      prompt: prompt,
+      duration: duration,
+      kind: isTimer ? 'timer' : 'command',
+    );
+    _tasks[fullId] = info;
+    _tasks[shortId] = info;
+  }
+
+  static String _shortTaskId(String id) {
+    final slash = id.lastIndexOf('/');
+    return slash >= 0 && slash < id.length - 1 ? id.substring(slash + 1) : id;
   }
 
   static bool _looksLikeToolResult(String content) =>

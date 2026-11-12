@@ -12,6 +12,7 @@ import 'package:baocode/kernel/agy/agy_translator.dart';
 import 'package:baocode/kernel/agy/agy_subagent_transcript.dart';
 import 'package:baocode/kernel/kernel_event.dart';
 import 'package:baocode/kernel/kernel_types.dart';
+import 'package:baocode/kernel/transcript.dart';
 
 void main() {
   test('updates one AGY tool item from active to completed', () {
@@ -432,7 +433,8 @@ Free space 1.0M tokens (97%)''',
     final translator = AgyTranslator(
       emit: events.add,
       nextSeq: () => events.length,
-      readEditSnapshot: (_) async => (before: 'before\n', after: 'after\n'),
+      readEditSnapshot: (_, {target}) async =>
+          (before: 'before\n', after: 'after\n'),
     )..beginTurn('turn-1');
 
     translator.accept({
@@ -611,33 +613,30 @@ Free space 1.0M tokens (97%)''',
     expect(edit.original, isNotNull);
   });
 
-  test('notifies edit watch callbacks before and after tool edit', () async {
-    final beforeCalls = <String>[];
-    final afterCalls = <String>[];
+  test('ChangeReview preserves initial base across multiple edits to same file', () async {
+    final tempDir = Directory.systemTemp.createTempSync('agy_multi_edit_test');
+    addTearDown(() {
+      try {
+        tempDir.deleteSync(recursive: true);
+      } catch (_) {}
+    });
+    final file = File('${tempDir.path}\\config.ts');
+    file.writeAsStringSync('const a = 1;\nconst b = 2;\n');
+
+    final review = ChangeReview(
+      BlobReviewStore.open('${tempDir.path}\\store'),
+      root: tempDir.path,
+    );
+
     final events = <KernelEvent>[];
     final translator = AgyTranslator(
       emit: events.add,
       nextSeq: () => events.length,
-      beforeEdit: (path) async => beforeCalls.add(path),
-      afterEdit: (path) async => afterCalls.add(path),
+      readFile: (path) async => file.readAsString(),
     )..beginTurn('turn-1');
 
-    translator.accept({
-      'event': 'step_update',
-      'step_update': {
-        'step_type': 'tool',
-        'tool_id': 'edit-1',
-        'tool_name': 'edit_file',
-        'state': 'ACTIVE',
-        'tool_info': {
-          'parameters': {'Path': 'popup.js', 'Target': 'old', 'Replacement': 'new'},
-        },
-      },
-    });
-    await Future<void>.delayed(Duration.zero);
-    expect(beforeCalls, ['popup.js']);
-    expect(afterCalls, isEmpty);
-
+    // First edit: change 'a = 1' to 'a = 10'
+    file.writeAsStringSync('const a = 10;\nconst b = 2;\n');
     translator.accept({
       'event': 'step_update',
       'step_update': {
@@ -646,12 +645,54 @@ Free space 1.0M tokens (97%)''',
         'tool_name': 'edit_file',
         'state': 'COMPLETED',
         'tool_info': {
-          'parameters': {'Path': 'popup.js', 'Target': 'old', 'Replacement': 'new'},
+          'parameters': {
+            'Path': file.path,
+            'Target': 'const a = 1;',
+            'Replacement': 'const a = 10;',
+          },
         },
       },
     });
-    await Future<void>.delayed(Duration.zero);
-    expect(afterCalls, ['popup.js']);
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+
+    final edit1 = events.whereType<FileEdited>().last;
+    review.report(edit1.change, original: edit1.original);
+    await review.look();
+
+    final baseAfterFirst = review.baseOf(file.path);
+    expect(baseAfterFirst, isNotNull);
+
+    // Second edit: change 'b = 2' to 'b = 20'
+    file.writeAsStringSync('const a = 10;\nconst b = 20;\n');
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_id': 'edit-2',
+        'tool_name': 'edit_file',
+        'state': 'COMPLETED',
+        'tool_info': {
+          'parameters': {
+            'Path': file.path,
+            'Target': 'const b = 2;',
+            'Replacement': 'const b = 20;',
+          },
+        },
+      },
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+
+    final edit2 = events.whereType<FileEdited>().last;
+    review.report(edit2.change, original: edit2.original);
+    await review.look();
+
+    // Base must remain the original file before the first edit, not rebased
+    expect(review.baseOf(file.path), baseAfterFirst);
+    expect(await review.original(file.path)!(), 'const a = 1;\nconst b = 2;\n');
+
+    // Undoing all restores the very original content
+    await review.undoAll();
+    expect(file.readAsStringSync(), 'const a = 1;\nconst b = 2;\n');
   });
 
   test('ChangeReview tracks and undoes AGY CRLF file edits', () async {
@@ -865,5 +906,529 @@ Free space 1.0M tokens (97%)''',
     final addedLines = item.lines.where((l) => l.type == DiffLineType.added).toList();
     expect(addedLines.map((l) => l.lineNumber).toList(), [102, 103, 104]);
     expect(item.firstChangedLine, 102);
+  });
+
+  test('handles multiple sequential edits on the same file without overwriting', () async {
+    final events = <KernelEvent>[];
+    final dir = Directory.systemTemp.createTempSync('agy-multi-edit-');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final file = File('${dir.path}/test_file.dart')
+      ..writeAsStringSync('line 1\nline 2\nline 3\n');
+
+    final translator = AgyTranslator(
+      emit: events.add,
+      nextSeq: () => events.length,
+      readFile: (path) async => File(path).readAsString(),
+    )..beginTurn('turn-1');
+
+    // First edit: change line 1
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_name': 'edit_file',
+        'state': 'ACTIVE',
+        'tool_info': {
+          'parameters': {
+            'Path': file.path,
+            'Target': 'line 1\n',
+            'Replacement': 'line 1 edited\n',
+          },
+        },
+      },
+    });
+    file.writeAsStringSync('line 1 edited\nline 2\nline 3\n');
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_name': 'edit_file',
+        'state': 'COMPLETED',
+        'tool_info': {
+          'parameters': {'Path': file.path},
+        },
+      },
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    // Second edit on the same file: change line 3
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_name': 'edit_file',
+        'state': 'ACTIVE',
+        'tool_info': {
+          'parameters': {
+            'Path': file.path,
+            'Target': 'line 3\n',
+            'Replacement': 'line 3 edited\n',
+          },
+        },
+      },
+    });
+    file.writeAsStringSync('line 1 edited\nline 2\nline 3 edited\n');
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_name': 'edit_file',
+        'state': 'COMPLETED',
+        'tool_info': {
+          'parameters': {'Path': file.path},
+        },
+      },
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    // Must emit two distinct CodeDiffItem entries with distinct item IDs
+    final diffItems = events
+        .whereType<ItemUpserted>()
+        .where((e) => e.item is CodeDiffItem)
+        .toList();
+    expect(diffItems.length, 2);
+    expect(diffItems[0].id, isNot(equals(diffItems[1].id)));
+
+    // Must emit two FileEdited events
+    final fileEdits = events.whereType<FileEdited>().toList();
+    expect(fileEdits.length, 2);
+
+    final item1 = diffItems[0].item as CodeDiffItem;
+    final item2 = diffItems[1].item as CodeDiffItem;
+    expect(item1.added, 1);
+    expect(item1.removed, 1);
+    expect(item2.added, 1);
+    expect(item2.removed, 1);
+  });
+
+  test('preserves strict temporal order between assistant texts and tool calls', () {
+    final events = <KernelEvent>[];
+    final transcript = Transcript();
+    void emit(KernelEvent event) {
+      events.add(event);
+      transcript.apply(event);
+    }
+
+    final translator = AgyTranslator(
+      emit: emit,
+      nextSeq: () => events.length + 1,
+    )..beginTurn('turn-1');
+
+    // 1. Initial assistant text before tool
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'agent_response',
+        'text_delta': 'Starting work...',
+      },
+    });
+
+    // 2. Tool call in the middle
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_id': 'tool-1',
+        'tool_name': 'read_file',
+        'state': 'COMPLETED',
+        'tool_info': {
+          'parameters': {'Path': 'pubspec.yaml'},
+        },
+      },
+    });
+
+    // 3. Final assistant text after tool
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'agent_response',
+        'text_delta': 'Completed all tasks!',
+      },
+    });
+
+    // Verify Transcript order
+    expect(transcript.length, 3);
+    final item0 = transcript.itemAt(0);
+    final item1 = transcript.itemAt(1);
+    final item2 = transcript.itemAt(2);
+
+    expect(item0, isA<AssistantTextItem>());
+    expect((item0 as AssistantTextItem).text, 'Starting work...');
+
+    expect(item1, isA<ToolCallItem>());
+    expect((item1 as ToolCallItem).tool, 'read_file');
+
+    expect(item2, isA<AssistantTextItem>());
+    expect((item2 as AssistantTextItem).text, 'Completed all tasks!');
+  });
+
+  test('run_command preserves toolSummary as TerminalItem.description', () {
+    final events = <KernelEvent>[];
+    final translator = AgyTranslator(
+      emit: events.add,
+      nextSeq: () => events.length,
+    )..beginTurn('turn-terminal');
+
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_id': 'cmd-1',
+        'tool_name': 'run_command',
+        'state': 'COMPLETED',
+        'tool_info': {
+          'parameters': {
+            'CommandLine': 'git status',
+            'toolSummary': 'Git status check',
+          },
+          'output': 'On branch main',
+        },
+      },
+    });
+
+    final upserted = events.whereType<ItemUpserted>().last;
+    expect(upserted.item, isA<TerminalItem>());
+    final term = upserted.item as TerminalItem;
+    expect(term.command, 'git status');
+    expect(term.description, 'Git status check');
+    expect(term.status, CommandStatus.succeeded);
+  });
+
+  test('ask_question emits QuestionRequest interaction', () {
+    final events = <KernelEvent>[];
+    final translator = AgyTranslator(
+      emit: events.add,
+      nextSeq: () => events.length,
+    )..beginTurn('turn-question');
+
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_id': 'q-1',
+        'tool_name': 'ask_question',
+        'state': 'ACTIVE',
+        'tool_info': {
+          'parameters': {
+            'questions': [
+              {
+                'question': 'Choose deployment target',
+                'options': ['(Recommended) Staging', 'Production'],
+                'is_multi_select': false,
+              }
+            ],
+          },
+        },
+      },
+    });
+
+    final interaction = events.whereType<InteractionRequested>().single;
+    expect(interaction.request, isA<QuestionRequest>());
+    final req = interaction.request as QuestionRequest;
+    expect(req.id, 'q-1');
+    expect(req.questions, hasLength(1));
+    expect(req.questions.first.prompt, 'Choose deployment target');
+    expect(req.questions.first.options, hasLength(2));
+    expect(req.questions.first.options.first.label, '(Recommended) Staging');
+  });
+
+  test('define_subagent formats label and target properly', () {
+    final events = <KernelEvent>[];
+    final translator = AgyTranslator(
+      emit: events.add,
+      nextSeq: () => events.length,
+    )..beginTurn('turn-define');
+
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_id': 'sub-def-1',
+        'tool_name': 'define_subagent',
+        'state': 'COMPLETED',
+        'tool_info': {
+          'parameters': {
+            'Name': 'Database Debugger',
+            'Description': 'Inspects PostgreSQL schemas and locks',
+            'SystemPrompt': 'You are a database expert.',
+          },
+        },
+      },
+    });
+
+    final upserted = events.whereType<ItemUpserted>().last;
+    expect(upserted.item, isA<ToolCallItem>());
+    final tool = upserted.item as ToolCallItem;
+    expect(tool.label, 'Define Agent');
+    expect(tool.target, 'Database Debugger');
+    expect(tool.detail, 'Inspects PostgreSQL schemas and locks');
+  });
+
+  test('manage_task with action list does not report a background task', () {
+    final tasks = <KernelTask>[];
+    final events = <KernelEvent>[];
+    final translator = AgyTranslator(
+      emit: events.add,
+      nextSeq: () => events.length,
+      onTasksChanged: (t) => tasks.addAll(t),
+    )..beginTurn('turn-task');
+
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_id': 'task-list-1',
+        'tool_name': 'manage_task',
+        'state': 'COMPLETED',
+        'tool_info': {
+          'parameters': {
+            'Action': 'list',
+          },
+          'output': 'Active tasks: none',
+        },
+      },
+    });
+
+    expect(tasks, isEmpty);
+  });
+
+  test('eager MCP tools starting with mcp_ are classified as ToolKind.mcp with clean label', () {
+    final events = <KernelEvent>[];
+    final translator = AgyTranslator(
+      emit: events.add,
+      nextSeq: () => events.length,
+    )..beginTurn('turn-mcp');
+
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_id': 'mcp-1',
+        'tool_name': 'mcp_fast-context_fast_context_search',
+        'state': 'COMPLETED',
+        'tool_info': {
+          'parameters': {
+            'query': 'AgyTranslator',
+          },
+          'output': 'Found 5 symbols',
+        },
+      },
+    });
+
+    final upserted = events.whereType<ItemUpserted>().last;
+    expect(upserted.item, isA<ToolCallItem>());
+    final tool = upserted.item as ToolCallItem;
+    expect(tool.kind, ToolKind.mcp);
+    expect(tool.label, 'MCP · fast-context · fast_context_search');
+    expect(tool.target, 'AgyTranslator');
+  });
+
+  test('streams thinking_delta and completes ThinkingItem when assistant text starts', () {
+    final events = <KernelEvent>[];
+    final translator = AgyTranslator(
+      emit: events.add,
+      nextSeq: () => events.length,
+    )..beginTurn('turn-thinking');
+
+    // 1. Thinking delta chunk 1
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'agent_response',
+        'thinking_delta': 'Thinking about mathematics...',
+      },
+    });
+
+    final thinkUpsert1 = events.whereType<ItemUpserted>().first;
+    expect(thinkUpsert1.item, isA<ThinkingItem>());
+    expect((thinkUpsert1.item as ThinkingItem).streaming, isTrue);
+
+    final delta1 = events.whereType<TextDelta>().first;
+    expect(delta1.text, 'Thinking about mathematics...');
+
+    // 2. Thinking delta chunk 2
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'agent_response',
+        'thinking_delta': ' 9.9 is greater than 9.11.',
+      },
+    });
+
+    final delta2 = events.whereType<TextDelta>().last;
+    expect(delta2.text, ' 9.9 is greater than 9.11.');
+
+    // 3. Assistant text starts
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'agent_response',
+        'text_delta': 'The larger number is 9.9.',
+      },
+    });
+
+    // Thinking item should be completed with non-streaming ThinkingItem
+    final completedItems = events.whereType<ItemUpserted>().where((e) => e.item is ThinkingItem).toList();
+    expect(completedItems, hasLength(2));
+    final completedThinking = completedItems.last.item as ThinkingItem;
+    expect(completedThinking.streaming, isFalse);
+    expect(completedThinking.text, 'Thinking about mathematics... 9.9 is greater than 9.11.');
+    expect(completedThinking.seconds, greaterThanOrEqualTo(1));
+
+    expect(events.whereType<ItemCompleted>().any((e) => e.id.contains('thinking')), isTrue);
+
+    // Assistant text should now be streaming
+    final assistantUpsert = events.whereType<ItemUpserted>().last;
+    expect(assistantUpsert.item, isA<AssistantTextItem>());
+  });
+
+  test('creates ThinkingItem from agent_response and loads thinking text asynchronously', () async {
+    final events = <KernelEvent>[];
+    final completer = Completer<void>();
+    final translator = AgyTranslator(
+      emit: (e) {
+        events.add(e);
+        if (e is ItemUpserted &&
+            e.item is ThinkingItem &&
+            (e.item as ThinkingItem).text.contains('Detailed reasoning from transcript')) {
+          if (!completer.isCompleted) completer.complete();
+        }
+      },
+      nextSeq: () => events.length,
+      readStepThinking: (conversation, stepIndex) async {
+        if (conversation == 'conv-think-1' && '$stepIndex' == '1') {
+          return 'Detailed reasoning from transcript about prime numbers';
+        }
+        return null;
+      },
+    );
+
+    translator.accept({
+      'event': 'init',
+      'conversation_id': 'conv-think-1',
+    });
+    translator.beginTurn('turn-think-async');
+
+    // AGY CLI emits agent_response DONE with duration (no text_delta)
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_index': 1,
+        'step_type': 'agent_response',
+        'state': 'DONE',
+        'duration_seconds': 5.2,
+      },
+    });
+
+    // Wait for async disk transcript load
+    await completer.future.timeout(const Duration(seconds: 2));
+
+    // ThinkingItem should have the loaded text and tokens
+    final thinkingUpsert = events.whereType<ItemUpserted>().firstWhere(
+      (e) => e.item is ThinkingItem,
+    );
+    final thinking = thinkingUpsert.item as ThinkingItem;
+    expect(thinking.tokens, greaterThan(0));
+    expect(thinking.seconds, 5);
+    expect(thinking.text, contains('Detailed reasoning from transcript'));
+  });
+
+  test('does not create empty ThinkingItem when transcript has no thinking for that step', () async {
+    final events = <KernelEvent>[];
+    final translator = AgyTranslator(
+      emit: events.add,
+      nextSeq: () => events.length,
+      readStepThinking: (conversation, stepIndex) async => null,
+    );
+
+    translator.accept({
+      'event': 'init',
+      'conversation_id': 'conv-think-2',
+    });
+    translator.beginTurn('turn-no-think');
+
+    // Step with no thinking in transcript (e.g. step 3)
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_index': 3,
+        'step_type': 'agent_response',
+        'state': 'DONE',
+        'duration_seconds': 8.0,
+      },
+    });
+
+    // Tool step
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_index': 4,
+        'step_type': 'tool',
+        'tool_name': 'run_command',
+        'parameters': {
+          'CommandLine': 'rg -n receivables',
+        },
+      },
+    });
+
+    await Future.delayed(const Duration(milliseconds: 150));
+
+    // No ThinkingItem should be emitted because step 3 had no thinking text
+    expect(events.whereType<ItemUpserted>().any((e) => e.item is ThinkingItem), isFalse);
+    expect(events.whereType<ItemUpserted>().any((e) => e.item is TerminalItem), isTrue);
+  });
+
+  test('write_file tool emits CodeDiffItem with diff lines', () async {
+    final tempDir = Directory.systemTemp.createTempSync('agy-write-test');
+    addTearDown(() {
+      try {
+        tempDir.deleteSync(recursive: true);
+      } catch (_) {}
+    });
+    final file = File(p.join(tempDir.path, 'created.txt'));
+
+    final events = <KernelEvent>[];
+    final translator = AgyTranslator(
+      emit: events.add,
+      nextSeq: () => events.length,
+      readFile: (path) async {
+        if (File(path).existsSync()) return File(path).readAsString();
+        return null;
+      },
+    )..beginTurn('turn-write');
+
+    // Simulate AGY CLI tool call with 'args' (as emitted from AGY jsonl)
+    translator.accept({
+      'event': 'step_update',
+      'step_update': {
+        'step_type': 'tool',
+        'tool_id': 'write-1',
+        'tool_name': 'write_file',
+        'state': 'COMPLETED',
+        'tool_info': {
+          'args': {
+            'Path': file.path,
+            'Content': 'line 1\nline 2\n',
+          },
+          'output': 'Created file',
+        },
+      },
+    });
+
+    // Write to disk as AGY CLI does
+    file.writeAsStringSync('line 1\nline 2\n');
+
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+
+    final diffItems = events
+        .whereType<ItemUpserted>()
+        .map((e) => e.item)
+        .whereType<CodeDiffItem>()
+        .toList();
+
+    expect(diffItems, hasLength(1));
+    expect(diffItems.single.fileName, 'created.txt');
+    expect(diffItems.single.added, 2);
+    expect(diffItems.single.removed, 0);
   });
 }

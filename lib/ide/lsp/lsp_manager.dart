@@ -336,19 +336,6 @@ class LspManager extends ChangeNotifier
   }) async {
     if (_shutDown) return;
 
-    // Trigger full workspace compile if Java LSP (JDT.LS) is running.
-    for (final server in _servers.values) {
-      final client = server.client;
-      if (client != null && client.isInitialized) {
-        if (client.commands.contains('java.workspace.compile')) {
-          unawaited(_ask(client, 'workspace/executeCommand', {
-            'command': 'java.workspace.compile',
-            'arguments': [true],
-          }));
-        }
-      }
-    }
-
     final paths = List<String>.from(_diagnostics.keys);
     final toClose = <String>[];
 
@@ -365,14 +352,35 @@ class LspManager extends ChangeNotifier
         saveDocument(path, text);
       } else {
         openDocument(path, text);
+        saveDocument(path, text);
         toClose.add(path);
       }
+    }
+
+    // Trigger full workspace compile for Java LSP (JDT.LS) to clean build cache
+    // and re-evaluate annotation processors (e.g. MapStruct, Lombok).
+    final compileFutures = <Future<Object?>>[];
+    for (final server in _servers.values) {
+      final client = server.client;
+      if (client != null && client.isInitialized) {
+        if (client.commands.contains('java.workspace.compile')) {
+          compileFutures.add(
+            _ask(client, 'workspace/executeCommand', {
+              'command': 'java.workspace.compile',
+              'arguments': [true],
+            }),
+          );
+        }
+      }
+    }
+    if (compileFutures.isNotEmpty) {
+      await Future.wait(compileFutures.map((f) => f.catchError((_) => null)));
     }
 
     _notify();
 
     if (toClose.isNotEmpty) {
-      Timer(const Duration(milliseconds: 1500), () {
+      Timer(const Duration(milliseconds: 6000), () {
         if (_shutDown) return;
         for (final path in toClose) {
           closeDocument(path);
