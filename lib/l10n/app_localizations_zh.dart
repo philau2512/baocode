@@ -1830,6 +1830,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sidebarArchived => '已归档';
 
   @override
+  String sidebarArchivedIn(String folder) {
+    return '$folder · 已归档';
+  }
+
+  @override
   String get sidebarOpenFolder => '打开文件夹…';
 
   @override
@@ -2216,6 +2221,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get agentStateRunningInBackground => '在后台运行';
+
+  @override
+  String get agentElapsedHint => '已运行时长：续跑的各次累计在内';
 
   @override
   String get agentStateRunning => '运行中';
@@ -3416,6 +3424,17 @@ class AppLocalizationsZh extends AppLocalizations {
   String explorerDownloading(int done, int total) {
     return '正在下载文件… $done/$total';
   }
+
+  @override
+  String get explorerDownload => '下载...';
+
+  @override
+  String explorerDownloadExists(String folder) {
+    return '$folder 里已有同名的文件或文件夹，要替换吗？';
+  }
+
+  @override
+  String get explorerDownloadReplace => '替换';
 
   @override
   String get explorerPreparingTransfer => '正在准备文件…';
@@ -5944,6 +5963,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get customizeKindRules => '规则';
 
   @override
+  String get customizeKindMemory => '记忆';
+
+  @override
   String get customizeKindCommands => '命令';
 
   @override
@@ -5999,6 +6021,10 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get customizeDisabled => '已停用';
+
+  @override
+  String get customizeLinkUnreachable =>
+      '未加载：这是个系统无法打开的链接。请把技能装成真实文件夹，或重新创建链接。';
 
   @override
   String get customizeBack => '返回';
@@ -6066,6 +6092,10 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get customizeEmptyPlugins => '还没有安装插件。在 Claude Code 里用 /plugin 安装。';
+
+  @override
+  String get customizeEmptyMemory =>
+      '还没有记忆。Claude Code 工作时会把了解到的你和这个项目的信息存在这里（自动记忆），之后的对话会读回来。';
 
   @override
   String get customizeEmptyMcpsUser =>
@@ -7854,6 +7884,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get newChatCreateWorkspaceDetail => '在多个文件夹中工作';
 
   @override
+  String newChatAddFolderTo(String name) {
+    return '将文件夹添加到 $name…';
+  }
+
+  @override
+  String get newChatAddFolderToDetail => '智能体也能在那里工作';
+
+  @override
+  String newChatProjectAddedFolders(String path, int count) {
+    return '$path · 另有 $count 个文件夹';
+  }
+
+  @override
   String get workspaceCreateTitle => '创建工作区';
 
   @override
@@ -7913,6 +7956,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sidebarEditProject => '编辑项目…';
 
   @override
+  String get sidebarAddFolder => '添加文件夹…';
+
+  @override
   String get projectEditTitle => '编辑项目';
 
   @override
@@ -7921,6 +7967,10 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String get projectLocationDescription =>
       '文件夹搬走或改名后，把地址改成新位置，这个项目的对话会一起迁移过去。不会移动文件夹本身。';
+
+  @override
+  String get projectFoldersDescription =>
+      '智能体在这个项目中工作时，也可以读写添加进来的文件夹。已开始的对话在下次启动时生效。';
 
   @override
   String projectChooseFolder(String app) {
@@ -9354,6 +9404,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get accountsGiteeHosts => 'gitee.com，使用私人令牌登录';
 
   @override
+  String get accountsGitCodeHosts => 'gitcode.com，使用个人访问令牌登录';
+
+  @override
   String get accountsSignInBrowser => '在浏览器中登录';
 
   @override
@@ -9407,6 +9460,9 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String get accountsTokenGiteeScopes =>
       '需要勾选 user_info、projects、pull_requests、issues、notes 权限的私人令牌。';
+
+  @override
+  String get accountsTokenGitCodeScopes => '需要能读取用户信息、读写仓库、Issue 和合并请求的个人访问令牌。';
 
   @override
   String accountsTokenCreate(String host) {
@@ -10365,6 +10421,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get aboutOpen => '打开';
+
+  @override
+  String get aboutDeviceId => '设备 ID';
+
+  @override
+  String get aboutCopy => '复制';
 
   @override
   String get stashSettingsIssueSync => 'Issue 同步为 Stash';
@@ -13178,4 +13240,119 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get generalSettingsRewindKeep => '保留改动';
+
+  @override
+  String get settingsTransferTitle => '迁移到另一台电脑';
+
+  @override
+  String get settingsTransferDescription => '把设置、快捷键和上游（含模型）导出成一个文件，到另一台电脑上导入。';
+
+  @override
+  String get settingsTransferLabel => '设置文件';
+
+  @override
+  String get settingsTransferExport => '导出…';
+
+  @override
+  String get settingsTransferImport => '导入…';
+
+  @override
+  String get settingsTransferExportQuestion => '导出设置？';
+
+  @override
+  String get settingsTransferExportDetail =>
+      '设置、快捷键和上游都会写进文件。上游的 API Key 只有勾选下面一项才会带上，而且是明文，所以文件别给别人，导入后就删掉。';
+
+  @override
+  String get settingsTransferWithKeys => '包含上游的 API Key';
+
+  @override
+  String settingsTransferExported(String path) {
+    return '已导出到 $path';
+  }
+
+  @override
+  String settingsTransferImportQuestion(String file) {
+    return '导入 $file 里的设置？';
+  }
+
+  @override
+  String get settingsTransferImportDetail =>
+      '文件里的设置、快捷键和上游会替换现有的；文件里没有的设置保持不变。';
+
+  @override
+  String get settingsTransferImported => '已导入。部分设置要重启 BaoCode 后生效。';
+
+  @override
+  String get settingsTransferNotAFile => '这不是 BaoCode 导出的设置文件。';
+
+  @override
+  String settingsTransferFailed(String error) {
+    return '没能完成：$error';
+  }
+
+  @override
+  String get generalSettingsSessionTools => 'Agent 可以统筹其他对话';
+
+  @override
+  String get generalSettingsSessionToolsDescription =>
+      'Agent 能列出你的其他对话、在不唤醒的情况下查看进展、给它们派活（没在运行的会恢复，正忙的会排队）并等待结果。适合用一个对话统筹其他对话；改动后新启动的 Agent 才有。';
+
+  @override
+  String get generalSettingsCommandLine => '命令行';
+
+  @override
+  String get baoBashRecommended => 'BaoCode Bash（推荐）';
+
+  @override
+  String get baoBashDescription =>
+      '让智能体在 Windows 上用上完整的 bash：自带 rg、grep、sed、awk、find、jq、tar 等八十多个常用命令，不需要装 Git for Windows；C:\\ 和 /c/ 两种路径都认。内置内核会用它运行命令。';
+
+  @override
+  String get baoBashNotInstalled =>
+      '未安装：智能体现在用 Git Bash 运行命令，没装 Git Bash 时用 cmd.exe。';
+
+  @override
+  String baoBashInstalled(String version) {
+    return '已安装 $version。';
+  }
+
+  @override
+  String baoBashUpdateAvailable(String version) {
+    return '有新版本 $version。';
+  }
+
+  @override
+  String baoBashDownloading(int percent) {
+    return '正在下载… $percent%';
+  }
+
+  @override
+  String get baoBashInstall => '安装';
+
+  @override
+  String baoBashInstallSize(String size) {
+    return '安装（$size）';
+  }
+
+  @override
+  String get baoBashUpdate => '更新';
+
+  @override
+  String get baoBashUninstall => '卸载';
+
+  @override
+  String baoBashFailed(String error) {
+    return '安装失败：$error';
+  }
+
+  @override
+  String get baoBashNoticeTitle => '在 Windows 上，推荐安装 BaoCode Bash';
+
+  @override
+  String get baoBashNoticeBody =>
+      '智能体运行命令会更稳。它自带 bash 和 rg、grep、sed、awk、find、jq、tar 等八十多个常用命令，不需要装 Git for Windows；C:\\ 和 /c/ 两种路径都认，不会再因为 cmd 和 PowerShell 写法不同而出错。';
+
+  @override
+  String get baoBashNoticeLater => '暂不';
 }

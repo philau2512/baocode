@@ -181,6 +181,14 @@ class ClaudeCodeKernel
     if (_model case final model? when !_pickedFast.containsKey(model)) {
       _pickedFast[model] = settings[KernelChoiceKind.fast.name] == 'fast';
     }
+    // A provider's model goes by what was picked for it, else its own
+    // (#914): a session resumed on one, on the context it had; a new one
+    // not on the context another model was last on.
+    if ((_context.resume, _model, _window)
+        case (_?, final model?, final window?)
+        when _providers.resolve(model) != null) {
+      _pickedWindows[model] = window;
+    }
     Future<ClaudeHistoryPage> wholePage(
       SessionRecord session, {
       required int turns,
@@ -464,7 +472,7 @@ class ClaudeCodeKernel
   /// What the context comes to as the model told it: its last request's
   /// input and output. The CLI's count is its own estimate for a model
   /// behind the proxy (images' base64 as text, once). Null with none
-  /// since the context changed under it (compacted, rewound).
+  /// since the context changed (compacted, rewound) or a result recalibrated it.
   int? _toldContext;
 
   /// The tool calls' results in the context, counted here: Claude Code's
@@ -481,9 +489,7 @@ class ClaudeCodeKernel
 
   /// [_contextDetail], its tool calls' results as counted here.
   ContextDetail? get _shownDetail => switch (_contextDetail) {
-    final detail? when _resultsKnown => detail.withToolResults(
-      _results.byTool,
-    ),
+    final detail? when _resultsKnown => detail.withToolResults(_results.byTool),
     final detail => detail,
   };
 
@@ -658,6 +664,7 @@ class ClaudeCodeKernel
         return;
       }
       _transport = transport;
+      // Share the request merger; custom providers record their calls already.
       _usage = custom == null
           ? ClaudeUsageMeter(
               record: (call, {trace}) =>
@@ -671,7 +678,10 @@ class ClaudeCodeKernel
               providerName: 'Claude Code',
               quota: () => _quota,
             )
-          : null;
+          : ClaudeUsageMeter(
+              record: (call, {trace}) {},
+              session: () => _sessionId,
+            );
       final control = _control = ControlChannel(transport.write);
       _subscription = transport.messages.listen(_receive);
       _applyInitialize(
@@ -1357,6 +1367,7 @@ class ClaudeCodeKernel
           }
           emit(Rewound(nextSeq, itemId: itemId, index: index));
           // Its last request held what is rewound too.
+          _usage?.clearContext();
           _toldContext = null;
           _resultsReading++;
           _resultsKnown = _resultsKnown && _results.rewind(itemId);
@@ -1876,6 +1887,11 @@ class ClaudeCodeKernel
   void _receive(Map<String, Object?> message) {
     if (_control?.receive(message) ?? false) return;
     _usage?.receive(message);
+    if (message['type'] == 'stream_event') {
+      final told = _toldContext;
+      _toldContext = _usage?.mainContextTokens ?? _toldContext;
+      if (_toldContext != told) _reportContext();
+    }
     if (message['type'] case 'assistant' || 'user'
         when _results.add(message) && _resultsKnown) {
       _reportContext();
@@ -1963,6 +1979,9 @@ class ClaudeCodeKernel
       case 'assistant':
         final told = _toldContext;
         if (_countRequest(message)) _reportStats();
+        if (_usage case final usage?) {
+          _toldContext = usage.mainContextTokens ?? told;
+        }
         if (_toldContext != told) _reportContext();
         if (message['error'] == 'rate_limit') {
           _limitSaid(message['message']);
@@ -2254,7 +2273,7 @@ class ClaudeCodeKernel
         _ => TurnUsage(costUsd: turnCost),
       },
     );
-    unawaited(_refreshContext());
+    unawaited(_refreshContext(completed: _custom == null));
   }
 
   // --- Goal ------------------------------------------------------------------------
@@ -2727,9 +2746,10 @@ class ClaudeCodeKernel
     unawaited(_refreshContext());
   }
 
-  Future<void> _refreshContext() async {
+  Future<void> _refreshContext({bool completed = false}) async {
     final control = _control;
     if (control == null) return;
+    final contextRequest = _usage?.mainContextRequest;
     try {
       // In full: each part's things too (the system prompt's sections,
       // the built-in tools, the messages by tool), counted where it runs.
@@ -2765,6 +2785,11 @@ class ClaudeCodeKernel
               ),
         ],
       );
+      // Only the same request's fresh count supersedes its final total.
+      if (completed && identical(_usage?.mainContextRequest, contextRequest)) {
+        _usage?.clearContext();
+        _toldContext = null;
+      }
       _reportContext();
     } on Object {
       // Context usage is a nicety: an older CLI may not answer.
@@ -3349,11 +3374,12 @@ class ClaudeCodeKernel
     final current = model.selected;
     if (current == null) return;
     if (effort.selected case final level?) _pickedEfforts[current] = level;
-    final window = switch (_custom) {
-      (_, final info) => _windowFor(info),
-      null => _windows[contextSize.selected],
-    };
-    if (window != null) _pickedWindows[current] = window;
+    // A provider's model's is noted as it is picked: else it is its own,
+    // as its upstream says (see _windowFor).
+    if (_custom != null) return;
+    if (_windows[contextSize.selected] case final window?) {
+      _pickedWindows[current] = window;
+    }
   }
 
   /// [model]'s variant with the long context or without, as there is one.
@@ -3388,10 +3414,13 @@ class ClaudeCodeKernel
   String? _effortFor(ProviderModel info) =>
       info.effortLevels.contains(_effort) ? _effort : info.initialEffort;
 
-  /// The context a provider's model fills before compacting: the one
-  /// picked, if it offers it, else its own.
-  int _windowFor(ProviderModel info) =>
-      info.contextOptions.contains(_window) ? _window! : info.initialContext;
+  /// The context a provider's model (the one in use) fills before
+  /// compacting: the one picked for it, if it offers it, else its own (as
+  /// its upstream says, else as set): not one picked with another model.
+  int _windowFor(ProviderModel info) => switch (_pickedWindows[_model]) {
+    final picked? when info.contextOptions.contains(picked) => picked,
+    _ => info.initialContext,
+  };
 
   /// The context the session compacts at: a provider's model's, else as
   /// picked (null for the CLI's own).
@@ -3546,10 +3575,11 @@ class ClaudeCodeKernel
     },
     selectedFor: (model) {
       if (model == this.model.selected) return contextSize.selected;
-      final window = _pickedWindows[model] ?? _window;
       if (_providers.resolve(model) case (_, final info)) {
-        return '${info.contextOptions.contains(window) ? window : info.initialContext}';
+        final picked = _pickedWindows[model];
+        return '${info.contextOptions.contains(picked) ? picked : info.initialContext}';
       }
+      final window = _pickedWindows[model] ?? _window;
       return _windows.entries
           .where((entry) => entry.value == window)
           .firstOrNull

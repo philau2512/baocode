@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:bao_link/bao_link.dart'
+    show linkGroupLeastPasses, linkGroupPasses;
 import 'package:path/path.dart' as p;
 
 import '../chat/chat_models.dart';
@@ -15,30 +18,24 @@ import '../link/workspace_bridge.dart' show WorkspaceBridge;
 import '../models/image_api.dart' show imageMediaType;
 import '../workspace/workspace.dart';
 import 'bot.dart';
-import 'bot_life.dart';
+import 'bot_groups.dart' show BotGroups;
 import 'bot_pacer.dart' show BotEventKind, botTime;
 import 'bot_watch.dart';
-import 'bot_world.dart';
 import 'bots.dart';
 
 /// Which bots a tool of theirs is for: those trusted with [level]; only
 /// the assistant, if [assistant]. One that keeps what is in a bot's files
 /// ([files]) is not for a bot that works on the computer: it keeps its
-/// files itself, with Claude Code's tools. The world's ([world]) is for
-/// none of them.
+/// files itself, with Claude Code's tools.
 class BotToolAccess {
-  const BotToolAccess({this.ability, this.assistant = false}) : world = false;
-  const BotToolAccess.world() : ability = null, assistant = false, world = true;
+  const BotToolAccess({this.ability, this.assistant = false});
 
   /// What a bot needs on for it; none for any bot.
   final BotAbility? ability;
   final bool assistant;
-  final bool world;
 
   bool allows(Bot bot) =>
-      !world &&
-      (!assistant || bot.assistant) &&
-      (ability == null || bot.can(ability!));
+      (!assistant || bot.assistant) && (ability == null || bot.can(ability!));
 }
 
 /// The bots' tools (`mcp__baocode__bot_*`): the user's agents seen,
@@ -371,9 +368,9 @@ abstract final class BotTools {
                 if ((only == null ||
                         thread.project.name == only ||
                         thread.project.path == only) &&
-                    (status == 'all' || _status(thread) == status))
+                    (status == 'all' || statusOf(thread) == status))
                   '${idOf(thread)} | ${thread.project.name} | ${thread.title}'
-                      ' | ${_status(thread)} | ${_ago(thread.updatedAt)}',
+                      ' | ${statusOf(thread)} | ${ago(thread.updatedAt)}',
             ];
             if (lines.isEmpty) return 'None.';
             return lines.take(limit.clamp(1, 100)).join('\n');
@@ -409,12 +406,12 @@ abstract final class BotTools {
               i >= 0 && lines.length < count;
               i--
             ) {
-              if (_line(session.itemAt(i)) case final line?) {
+              if (lineOf(session.itemAt(i)) case final line?) {
                 lines.add(line);
               }
             }
             return [
-              '"${thread.title}" in ${thread.project.name}, ${_status(thread)}:',
+              '"${thread.title}" in ${thread.project.name}, ${statusOf(thread)}:',
               ...lines.reversed,
             ].join('\n');
           },
@@ -548,6 +545,11 @@ abstract final class BotTools {
                 uri.host.isEmpty) {
               throw ArgumentError('Not a web address: $url');
             }
+            // In a group's turn: fetched, to go with its reply there.
+            final bot = bots.botAt(call.cwd);
+            if (bot != null && bots.groups.answering(bot.id) != null) {
+              bots.groups.sentPicture(bot.id, await _fetchPicture(uri));
+            }
             return 'Sent.';
           },
           required: ['url'],
@@ -621,8 +623,10 @@ abstract final class BotTools {
           'now: to the user in private while you are in a group (they '
           'asked you to write to them, say), or to one of your groups '
           'from your chat with the user (they asked you to pass '
-          'something on). It may not go: then you are told why, and it '
-          'is yours to say so, or not.',
+          'something on); with pictures from files, if you like. It may '
+          'not go: then you are told why, and it is yours to say so, or '
+          'not. Pictures for the group you are answering go with your '
+          'reply: send them here with no text.',
           {
             'to': {
               'type': 'string',
@@ -634,11 +638,25 @@ abstract final class BotTools {
               'type': 'string',
               'description': 'What you say: a line or two, as in a chat.',
             },
+            'images': {
+              'type': 'array',
+              'items': {'type': 'string'},
+              'description':
+                  'Pictures to send with it: their files (absolute paths, '
+                  'or in your folder), as generate_image saved them, say.',
+            },
           },
           (input, call) async {
             final bot = botOf(call);
             final to = text(input, 'to');
-            final said = text(input, 'text');
+            final said = (input['text'] as String? ?? '').trim();
+            final pictures = [
+              for (final path in (input['images'] as List? ?? const []))
+                await _pictureFrom(bots, bot, '$path'),
+            ];
+            if (said.isEmpty && pictures.isEmpty) {
+              throw ArgumentError('Nothing to send: text is empty');
+            }
             if (to == ChatCodec.botToUser) {
               if (bots.groups.answering(bot.id) == null) {
                 throw StateError(
@@ -646,10 +664,17 @@ abstract final class BotTools {
                   'reply, not with this tool.',
                 );
               }
-              if (bots.world.sendsPrivately(bot) case final why?) {
+              if (bots.sendsPrivately(bot) case final why?) {
                 throw StateError('Not sent: $why.');
               }
-              return 'Sent to the user, in your chat with them.';
+              return [
+                claudeSdkText('Sent to the user, in your chat with them.'),
+                for (final picture in pictures)
+                  claudeSdkImage(
+                    base64Encode(picture.bytes),
+                    picture.mediaType,
+                  ),
+              ];
             }
             final group =
                 bots.groups.byId(to) ??
@@ -657,60 +682,27 @@ abstract final class BotTools {
                     .where((g) => g.name == to && g.members.contains(bot.id))
                     .firstOrNull ??
                 (throw StateError('You are in no group $to.'));
-            final message = bots.groups.say(group.id, bot.id, said);
+            // The group it answers: its pictures with its reply.
+            if (bots.groups.answering(bot.id) == group.id &&
+                pictures.isNotEmpty) {
+              for (final picture in pictures) {
+                bots.groups.sentPicture(bot.id, picture);
+              }
+              return 'The pictures go with your reply to "${group.name}"'
+                  '${said.isEmpty ? '' : '; say your words in it'}.';
+            }
+            final message = bots.groups.say(
+              group.id,
+              bot.id,
+              said,
+              images: pictures,
+            );
             return 'Said in "${group.name}" (#${message.seq}).';
           },
-          required: ['to', 'text'],
+          required: ['to'],
           summary: (input, _) => '${input['to'] ?? ''}',
         ),
         const BotToolAccess(),
-      ),
-      (
-        tool(
-          BotWorld.wakeTool,
-          'Wakes a bot: in a group, to read what is new there and answer if '
-          'it will; or in private, with something on its mind for the user. '
-          'It is told why, and decides itself. Tells you if it does not go, '
-          'and why.',
-          {
-            'who': {
-              'type': 'string',
-              'description': 'The bot, by name (${BotLife.world}).',
-            },
-            'where': {
-              'type': 'string',
-              'description':
-                  'A group, by its id or name; "${BotWorld.inPrivate}" for its '
-                  'chat with the user.',
-            },
-            'after': {
-              'type': 'string',
-              'description':
-                  'How long from now: "0s", "3s", "2m", "3h". Now if none.',
-            },
-            'why': {
-              'type': 'string',
-              'description': 'What happened, in a few words of fact.',
-            },
-          },
-          (input, call) async => bots.world.wake(
-            who: text(input, 'who'),
-            where: text(input, 'where'),
-            after: switch (input['after']) {
-              null => Duration.zero,
-              final after =>
-                BotWorld.duration('$after') ??
-                    (throw ArgumentError(
-                      'after: "$after" is not a time from now ("5s", "2m").',
-                    )),
-            },
-            why: (input['why'] as String? ?? '').trim(),
-          ),
-          required: ['who', 'where', 'why'],
-          summary: (input, _) =>
-              '${input['who'] ?? ''} · ${input['where'] ?? ''}',
-        ),
-        const BotToolAccess.world(),
       ),
       (
         tool(
@@ -969,7 +961,180 @@ abstract final class BotTools {
         ),
         const BotToolAccess(assistant: true),
       ),
+      (
+        tool(
+          'bot_list_groups',
+          "Lists the user's group chats: id, name, who is in them, how many "
+              'times their conversation may be passed on, how long each '
+              'waits before answering, when someone last spoke there.',
+          const {},
+          (input, call) async {
+            final groups = bots.groups;
+            if (groups.groups.isEmpty) return 'No groups.';
+            return [
+              for (final group in groups.groups)
+                '${group.id} | ${group.name} | '
+                    '${[for (final id in group.members) bots.byId(id)?.name ?? id].join(', ')}'
+                    ' | ${group.passes == 0 ? 'passed on without bound' : 'passed on at most ${group.passes} times'}'
+                    ' | ${group.gap == 0 ? 'answered at once' : 'each waits ${group.gap}s before answering'}'
+                    ' | ${switch (groups.messages(group.id).lastOrNull) {
+                      final last? => 'last spoke ${BotGroups.botTimeOf(last.at)}',
+                      null => 'nothing said yet',
+                    }}',
+            ].join('\n');
+          },
+        ),
+        const BotToolAccess(assistant: true),
+      ),
+      (
+        tool(
+          'bot_save_group',
+          'Makes a group chat of the user and some of their contacts (no '
+              'group), or changes one: its name, who joins (add), who leaves '
+              '(remove), its rules, how many times its conversation may be '
+              'passed on, how long each waits before answering. '
+              'What you give changes, the rest stays. Who joins or leaves, '
+              'and a new name, show in the group as done by you. You need not '
+              'be in it yourself.',
+          {
+            'group': {
+              'type': 'string',
+              'description':
+                  'Its id or name (bot_list_groups); none for a '
+                  'new one.',
+            },
+            'name': {'type': 'string'},
+            'add': {
+              'type': 'array',
+              'items': {'type': 'string'},
+              'description':
+                  'Contacts to join it, by name or id '
+                  '(bot_list_bots); you too, by your name.',
+            },
+            'remove': {
+              'type': 'array',
+              'items': {'type': 'string'},
+              'description': 'Members to leave it, by name or id.',
+            },
+            'rules': {
+              'type': 'string',
+              'description':
+                  'Its rules, all of them, as they are to read: what everyone '
+                  'in it keeps to. Empty for none.',
+            },
+            'passes': {
+              'type': 'integer',
+              'description':
+                  'How many times its conversation may be passed '
+                  'on after each of the user\'s messages: '
+                  '$linkGroupLeastPasses or more; 0 for no bound. '
+                  '$linkGroupPasses for a new one, if none.',
+            },
+            'gap': {
+              'type': 'integer',
+              'description':
+                  'Seconds each bot handed the conversation by another waits '
+                  'before it answers: 0 for at once (a new one\'s), no upper '
+                  'bound.',
+            },
+          },
+          (input, call) async {
+            final me = freshOf(call);
+            final groups = bots.groups;
+            List<String> named(String key) => [
+              for (final name in (input[key] as List?) ?? const [])
+                if (name is String && name.trim().isNotEmpty)
+                  _contact(bots, name.trim()),
+            ];
+            final which = switch (input['group']) {
+              final String id when id.trim().isNotEmpty => id.trim(),
+              _ => null,
+            };
+            final had = which == null
+                ? null
+                : groups.byId(which) ??
+                      groups.groups.where((g) => g.name == which).firstOrNull ??
+                      (throw StateError(
+                        'No group $which. List them with bot_list_groups.',
+                      ));
+            final add = named('add');
+            final remove = named('remove');
+            final members = [
+              for (final id in [...?had?.members, ...add])
+                if (!remove.contains(id)) id,
+            ];
+            if (members.isEmpty) {
+              throw ArgumentError(
+                'A group needs someone in it besides the user',
+              );
+            }
+            final name = switch (input['name']) {
+              final String name when name.trim().isNotEmpty => name.trim(),
+              _ => had?.name ?? '',
+            };
+            final saved = groups.save(
+              id: had?.id,
+              name: name,
+              members: members,
+              passes: (input['passes'] as num?)?.toInt(),
+              rules: input['rules'] as String?,
+              gap: (input['gap'] as num?)?.toInt(),
+              by: me.id,
+            );
+            final who = [
+              for (final id in saved.members) bots.byId(id)?.name ?? id,
+            ].join(', ');
+            return had == null
+                ? 'Made "${saved.name}" (${saved.id}): the user, $who.'
+                : 'Saved "${saved.name}": the user, $who.';
+          },
+          summary: (input, _) => '${input['name'] ?? input['group'] ?? ''}',
+        ),
+        const BotToolAccess(assistant: true),
+      ),
+      (
+        tool(
+          'bot_delete_group',
+          'Deletes a group chat and all that was said in it, for good: only '
+              'when the user has said to, plainly; ask them first.',
+          {
+            'group': {
+              'type': 'string',
+              'description': 'Its id or name (bot_list_groups).',
+            },
+          },
+          (input, call) async {
+            final which = text(input, 'group');
+            final groups = bots.groups;
+            final group =
+                groups.byId(which) ??
+                groups.groups.where((g) => g.name == which).firstOrNull ??
+                (throw StateError(
+                  'No group $which. List them with bot_list_groups.',
+                ));
+            groups.delete(group.id);
+            return 'Deleted "${group.name}".';
+          },
+          required: ['group'],
+          summary: (input, _) => '${input['group'] ?? ''}',
+        ),
+        const BotToolAccess(assistant: true),
+      ),
     ];
+  }
+
+  /// The contact [name] names: by its id, its name, or its name without
+  /// what is in brackets.
+  static String _contact(Bots bots, String name) {
+    String bare(String n) => n.replaceAll(RegExp(r'[（(][^）)]*[）)]'), '').trim();
+    final found =
+        bots.byId(name) ??
+        bots.bots.where((b) => b.name == name).firstOrNull ??
+        bots.bots.where((b) => bare(b.name) == bare(name)).firstOrNull;
+    if (found == null) {
+      throw StateError('No contact $name. List them with bot_list_bots.');
+    }
+    return found.id;
   }
 
   /// The picture file at [path] (in [bot]'s folder, if not a full path)
@@ -987,6 +1152,50 @@ abstract final class BotTools {
         : bots.folders.readFile(p.join(bot.folder, path));
     if (bytes == null) throw StateError('No file $path');
     return squarePicture(bytes);
+  }
+
+  /// The picture in file [path] (absolute, or in [bot]'s folder), as it is.
+  static Future<ImageAttachment> _pictureFrom(
+    Bots bots,
+    Bot bot,
+    String path,
+  ) async {
+    final bytes = p.isAbsolute(path)
+        ? switch (File(path)) {
+            final file when file.existsSync() => await file.readAsBytes(),
+            _ => null,
+          }
+        : bots.folders.readFile(p.join(bot.folder, path));
+    if (bytes == null) throw StateError('No file $path');
+    final type = imageMediaType(bytes);
+    if (type == null) throw StateError('Not a picture: $path');
+    return ImageAttachment(bytes: bytes, mediaType: type, name: path);
+  }
+
+  /// The picture at [uri], fetched: no larger than 20 MB.
+  static Future<ImageAttachment> _fetchPicture(Uri uri) async {
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 15);
+    try {
+      final request = await client.getUrl(uri);
+      final response = await request.close().timeout(
+        const Duration(seconds: 30),
+      );
+      if (response.statusCode != 200) {
+        throw StateError('Not sent: the page answered ${response.statusCode}');
+      }
+      final bytes = BytesBuilder(copy: false);
+      await for (final chunk in response.timeout(const Duration(seconds: 30))) {
+        bytes.add(chunk);
+        if (bytes.length > 20 << 20) throw StateError('Not sent: too large');
+      }
+      final data = bytes.takeBytes();
+      final type = imageMediaType(data);
+      if (type == null) throw StateError('Not sent: not a picture');
+      return ImageAttachment(bytes: data, mediaType: type);
+    } finally {
+      client.close(force: true);
+    }
   }
 
   /// The picture [bytes] as a bot's: its middle, square, no larger than
@@ -1044,7 +1253,8 @@ abstract final class BotTools {
   /// The largest side of a picture a bot is given as its own.
   static const avatarSide = 512;
 
-  static String _status(AgentThread thread) => switch (thread.status) {
+  /// [thread] in a word: waiting, running, failed or idle.
+  static String statusOf(AgentThread thread) => switch (thread.status) {
     ThreadStatus.needsInput => 'waiting',
     ThreadStatus.running => 'running',
     _ when _lastIsError(thread) => 'failed',
@@ -1066,7 +1276,8 @@ abstract final class BotTools {
     return false;
   }
 
-  static String _ago(DateTime at) {
+  /// How long ago [at] was, in short.
+  static String ago(DateTime at) {
     final minutes = DateTime.now().difference(at).inMinutes;
     if (minutes < 1) return 'just now';
     if (minutes < 60) return '${minutes}m ago';
@@ -1081,7 +1292,7 @@ abstract final class BotTools {
 
   /// [item] in a line or so, for the bot to read; null for what is not
   /// worth it.
-  static String? _line(ChatItem item) => switch (item) {
+  static String? lineOf(ChatItem item) => switch (item) {
     UserMessageItem(:final text, fromAgent: final agent?) =>
       'Subagent "$agent": ${_clip(text)}',
     UserMessageItem(:final text) => 'User: ${_clip(text)}',

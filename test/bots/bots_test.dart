@@ -15,6 +15,7 @@ import 'package:baocode/bots/bots.dart';
 import 'package:baocode/chat/chat_models.dart';
 import 'package:baocode/chat/chat_session.dart';
 import 'package:baocode/kernel/agent_kernel.dart';
+import 'package:baocode/kernel/kernel_types.dart';
 import 'package:baocode/kernel/queued_messages.dart';
 import 'package:baocode/link/chat_codec.dart';
 import 'package:baocode/kernel/claude_code/claude_code_kernel.dart';
@@ -24,11 +25,28 @@ import 'package:baocode/kernel/claude_code/mock_claude_code_transport.dart';
 import 'package:baocode/workspace/preference_store.dart';
 import 'package:baocode/images/image_tools.dart';
 import 'package:baocode/workspace/workspace.dart';
+import 'package:bao_link/bao_link.dart' show linkGroupLeastPasses;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
 void main() {
+  test('a new bot runs on the first DeepSeek model offered; none, the '
+      "app's", () {
+    KernelOption model(String id, String label) =>
+        KernelOption(id, label, Icons.circle, '');
+    expect(
+      Bots.newBotModelOf([
+        model('sonnet', 'Sonnet'),
+        model('@ds/deepseek-v4', 'DeepSeek V4'),
+        model('@ds/deepseek-chat', 'DeepSeek Chat'),
+      ]),
+      '@ds/deepseek-v4',
+    );
+    expect(Bots.newBotModelOf([model('@x/m1', 'DeepSeek R1')]), '@x/m1');
+    expect(Bots.newBotModelOf([model('sonnet', 'Sonnet')]), isNull);
+  });
+
   group('BotSuggestions', () {
     List<String> notes(bool wanted, bool? told, {bool suggested = false}) =>
         BotSuggestions.notes(wanted: wanted, told: told, suggested: suggested);
@@ -499,6 +517,32 @@ void main() {
       }
       expect(bots.timeline(bot).lines.first, '- 14:00 [私聊] 用户: 在吗');
       expect(bots.unread(bot), 0);
+    });
+
+    test('when its chat with the user went on: not when a group did', () async {
+      final bot = bots.bots.single;
+      final session = bots.threadFor(bot).session;
+      Future<void> told(String text) async {
+        final had = session.itemCount;
+        session.send(ComposerMessage(text: text));
+        for (var i = 0; i < 300 && session.itemCount == had; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+        session.stop();
+        for (var i = 0; i < 300 && session.isStreaming; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+      }
+
+      expect(bots.chattedAt(bot), isNull);
+      await told(
+        botEventMessage('[group g1] The group chat "Team": you.\nNew in it.'),
+      );
+      expect(bots.chattedAt(bot), isNull);
+      final before = DateTime.now();
+      await told('在吗');
+      expect(bots.chattedAt(bot), isNotNull);
+      expect(bots.chattedAt(bot)!.isBefore(before), isFalse);
     });
 
     test('its agent is told who it is, with all an agent has', () async {
@@ -1090,6 +1134,43 @@ void main() {
       expect(bots.threadOf(bot), now);
     });
 
+    test('its chat deleted, its timeline of it goes too, and what it was '
+        'up to: not to be read back; its groups\' kept', () async {
+      final bot = bots.save(name: 'Mia', identity: '', abilities: {});
+      bots.live(bot, place: bots.privatePlace, who: 'Leo', text: 'My cat Tom');
+      bots.live(bot, place: '群·Tea #1', who: 'Bo', text: 'hello all');
+      bots.live(
+        bot,
+        place: bots.privatePlace,
+        who: 'Mia',
+        text: 'Hi',
+        mine: true,
+      );
+      bots.setNow(bot, 'waiting to hear of Tom');
+      bots.setSelfNotes(bot, '${bots.selfNotes(bot)}\nLikes rain');
+      bots.clearChat(bot);
+      final today = bots.timeline(bot).lines;
+      expect(today, hasLength(1));
+      expect(today.single, contains('hello all'));
+      expect(bots.selfNotes(bot), 'Likes rain');
+      // Nothing but it said that day: the day's file gone.
+      final other = bots.save(name: 'Bo', identity: '', abilities: {});
+      bots.live(other, place: bots.privatePlace, who: 'Leo', text: 'secret');
+      bots.clearChat(other);
+      expect(folders.files, isNot(contains(bots.timelineFile(other))));
+    });
+
+    test('what it remembers of the user cleared, what it thinks of them '
+        'goes too; of others kept', () {
+      final bot = bots.save(name: 'Mia', identity: '', abilities: {});
+      bots.notePerson(bot, bots.userName, 'has a cat, Tom');
+      bots.notePerson(bot, 'Bo', 'funny');
+      bots.setMemory(bot, '- Has a cat');
+      expect(bots.people(bot), contains('Tom'));
+      bots.setMemory(bot, '');
+      expect(bots.people(bot), '## Bo\n- funny');
+    });
+
     test('it drops what it meant to come back to', () async {
       final bot = bots.save(name: 'Mia', identity: '', abilities: {});
       await call(bot, 'bot_later', {'seconds': 180, 'note': 'Remind of tea'});
@@ -1173,6 +1254,49 @@ void main() {
       expect((await call(mia, 'bot_list_bots', {}))['isError'], isTrue);
       expect(botInstructions(self, memory: ''), contains('<contacts>'));
       expect(botInstructions(mia, memory: ''), isNot(contains('<contacts>')));
+    });
+
+    test('the assistant looks after the groups: made, changed (who joins '
+        'and leaves, said there as its doing; its rules), deleted', () async {
+      final assistant = bots.bots.firstWhere((b) => b.assistant);
+      final mia = bots.save(name: 'Mia', identity: '', abilities: {});
+      final bo = bots.save(name: '阿包（同学）', identity: '', abilities: {});
+      final made = await call(assistant, 'bot_save_group', {
+        'name': '周末',
+        'add': ['Mia', '阿包'],
+        'rules': '只聊周末去哪',
+      });
+      expect(made['isError'], isNot(isTrue), reason: '$made');
+      final group = bots.groups.groups.single;
+      expect(group.members, [mia.id, bo.id]);
+      expect(group.rules, '只聊周末去哪');
+      final changed = await call(assistant, 'bot_save_group', {
+        'group': '周末',
+        'add': [assistant.name],
+        'remove': [mia.id],
+        'passes': 1,
+      });
+      expect(changed['isError'], isNot(isTrue), reason: '$changed');
+      final now = bots.groups.byId(group.id)!;
+      expect(now.members, [bo.id, assistant.id]);
+      expect(now.passes, linkGroupLeastPasses);
+      final notices = [
+        for (final m in bots.groups.messages(group.id))
+          if (m.notice) m.text,
+      ];
+      expect(notices, [
+        '${assistant.name} 邀请 Mia、阿包（同学） 加入了群聊',
+        '${assistant.name} 邀请 ${assistant.name} 加入了群聊',
+        '${assistant.name} 将 Mia 移出了群聊',
+      ]);
+      expect(
+        '${(await call(assistant, 'bot_list_groups', {}))['content']}',
+        contains('${group.id} | 周末 | 阿包（同学）, ${assistant.name}'),
+      );
+      // Not another's to do.
+      expect((await call(mia, 'bot_save_group', {}))['isError'], isTrue);
+      await call(assistant, 'bot_delete_group', {'group': group.id});
+      expect(bots.groups.groups, isEmpty);
     });
 
     test('the bots know who the user is, their picture to see', () async {
@@ -1623,27 +1747,40 @@ void main() {
       expect(await offered(bot.folder), contains('bot_recent_events'));
     });
 
-    test('woken by the app, not writing until it says a word', () async {
+    test('at work in its chat, as it is: woken by the app too; not at a '
+        'group\'s', () async {
       final bot = toldOfAll();
       final session = bots.threadFor(bot).session;
+      Future<void> until(bool Function() done) async {
+        for (var i = 0; i < 300 && !done(); i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+      }
+
+      expect(bots.atWork(bot), isNull);
       bots.later(bot, const Duration(minutes: 1), 'Ask how it went');
       now = now.add(const Duration(minutes: 2));
       bots.deliver();
-      for (var i = 0; i < 300 && !session.isStreaming; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 10));
-      }
+      await until(() => session.isStreaming);
       expect(bots.threadOf(bot)!.status, ThreadStatus.running);
-      expect(bots.typing(bot), isFalse);
-      session.stop();
-      for (var i = 0; i < 300 && session.isStreaming; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 10));
-      }
-      // The user's words: writing back.
-      session.send(const ComposerMessage(text: 'hi'));
-      for (var i = 0; i < 300 && !session.isStreaming; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 10));
-      }
       expect(bots.typing(bot), isTrue);
+      final work = bots.atWork(bot)!;
+      expect(work.group, isNull);
+      expect(work.since, isNotNull);
+      session.stop();
+      await until(() => !session.isStreaming);
+      expect(bots.typing(bot), isFalse);
+      // A group's news: at work there, not in its chat.
+      session.send(
+        ComposerMessage(
+          text: botEventMessage(
+            '[group g1] The group chat "Team": you.\nNew in it.',
+          ),
+        ),
+      );
+      await until(() => session.isStreaming);
+      expect(bots.typing(bot), isFalse);
+      expect(bots.atWork(bot)!.group, 'g1');
       session.stop();
     });
   });

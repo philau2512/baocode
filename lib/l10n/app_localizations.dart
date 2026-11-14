@@ -3458,6 +3458,12 @@ abstract class AppLocalizations {
   /// **'Archived'**
   String get sidebarArchived;
 
+  /// No description provided for @sidebarArchivedIn.
+  ///
+  /// In en, this message translates to:
+  /// **'{folder} · archived'**
+  String sidebarArchivedIn(String folder);
+
   /// No description provided for @sidebarOpenFolder.
   ///
   /// In en, this message translates to:
@@ -4123,6 +4129,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'running in the background'**
   String get agentStateRunningInBackground;
+
+  /// No description provided for @agentElapsedHint.
+  ///
+  /// In en, this message translates to:
+  /// **'How long it has been at work: the times it was continued add up'**
+  String get agentElapsedHint;
 
   /// Lowercase, after a subagent's name.
   ///
@@ -6013,6 +6025,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Downloading files... {done}/{total}'**
   String explorerDownloading(int done, int total);
+
+  /// No description provided for @explorerDownload.
+  ///
+  /// In en, this message translates to:
+  /// **'Download...'**
+  String get explorerDownload;
+
+  /// No description provided for @explorerDownloadExists.
+  ///
+  /// In en, this message translates to:
+  /// **'Some of them are already in {folder}. Replace them?'**
+  String explorerDownloadExists(String folder);
+
+  /// No description provided for @explorerDownloadReplace.
+  ///
+  /// In en, this message translates to:
+  /// **'Replace'**
+  String get explorerDownloadReplace;
 
   /// No description provided for @explorerPreparingTransfer.
   ///
@@ -10269,6 +10299,12 @@ abstract class AppLocalizations {
   /// **'Rules'**
   String get customizeKindRules;
 
+  /// No description provided for @customizeKindMemory.
+  ///
+  /// In en, this message translates to:
+  /// **'Memory'**
+  String get customizeKindMemory;
+
   /// No description provided for @customizeKindCommands.
   ///
   /// In en, this message translates to:
@@ -10383,6 +10419,12 @@ abstract class AppLocalizations {
   /// **'Disabled'**
   String get customizeDisabled;
 
+  /// No description provided for @customizeLinkUnreachable.
+  ///
+  /// In en, this message translates to:
+  /// **'Not loaded: this is a link the system cannot follow. Install the skill as a real folder, or link it again.'**
+  String get customizeLinkUnreachable;
+
   /// No description provided for @customizeBack.
   ///
   /// In en, this message translates to:
@@ -10490,6 +10532,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'None installed. Install plugins with /plugin in Claude Code.'**
   String get customizeEmptyPlugins;
+
+  /// No description provided for @customizeEmptyMemory.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing remembered yet. Claude Code saves what it learns about you and this project here as it works (its auto memory), and reads it back in later conversations.'**
+  String get customizeEmptyMemory;
 
   /// No description provided for @customizeEmptyMcpsUser.
   ///
@@ -13467,6 +13515,24 @@ abstract class AppLocalizations {
   /// **'Work across several folders'**
   String get newChatCreateWorkspaceDetail;
 
+  /// The menu's choice, in the menu of where a new chat works, that picks a folder in the file manager and adds it to the project picked: its agents work in it too.
+  ///
+  /// In en, this message translates to:
+  /// **'Add Folder to {name}…'**
+  String newChatAddFolderTo(String name);
+
+  /// No description provided for @newChatAddFolderToDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'Its agents work there too'**
+  String get newChatAddFolderToDetail;
+
+  /// Under a project with folders added to it in the menu of where a new chat works: where it is, and how many folders were added to it.
+  ///
+  /// In en, this message translates to:
+  /// **'{path} · {count, plural, =1{1 more folder} other{{count} more folders}}'**
+  String newChatProjectAddedFolders(String path, int count);
+
   /// The title of the dialog that makes a workspace of several folders.
   ///
   /// In en, this message translates to:
@@ -13569,6 +13635,12 @@ abstract class AppLocalizations {
   /// **'Edit Project…'**
   String get sidebarEditProject;
 
+  /// A project's menu item: picks a folder in the file manager and adds it to the project, its agents working in it too.
+  ///
+  /// In en, this message translates to:
+  /// **'Add Folder…'**
+  String get sidebarAddFolder;
+
   /// No description provided for @projectEditTitle.
   ///
   /// In en, this message translates to:
@@ -13586,6 +13658,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Moved or renamed the folder? Point the project at it here, and its conversations move along. The folder itself is not moved.'**
   String get projectLocationDescription;
+
+  /// No description provided for @projectFoldersDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Agents working in this project can read and change the files in the folders added to it too. Conversations already started see them once they start again.'**
+  String get projectFoldersDescription;
 
   /// No description provided for @projectChooseFolder.
   ///
@@ -16125,6 +16203,12 @@ abstract class AppLocalizations {
   /// **'gitee.com, with a personal access token'**
   String get accountsGiteeHosts;
 
+  /// No description provided for @accountsGitCodeHosts.
+  ///
+  /// In en, this message translates to:
+  /// **'gitcode.com, with a personal access token'**
+  String get accountsGitCodeHosts;
+
   /// No description provided for @accountsSignInBrowser.
   ///
   /// In en, this message translates to:
@@ -16214,6 +16298,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'A personal access token with the user_info, projects, pull_requests, issues and notes scopes.'**
   String get accountsTokenGiteeScopes;
+
+  /// No description provided for @accountsTokenGitCodeScopes.
+  ///
+  /// In en, this message translates to:
+  /// **'A personal access token that can read your user info, and read and write repositories, issues and pull requests.'**
+  String get accountsTokenGitCodeScopes;
 
   /// No description provided for @accountsTokenCreate.
   ///
@@ -17922,6 +18012,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Open'**
   String get aboutOpen;
+
+  /// No description provided for @aboutDeviceId.
+  ///
+  /// In en, this message translates to:
+  /// **'Device ID'**
+  String get aboutDeviceId;
+
+  /// No description provided for @aboutCopy.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy'**
+  String get aboutCopy;
 
   /// No description provided for @stashSettingsIssueSync.
   ///
@@ -22662,6 +22764,192 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Keep the Changes'**
   String get generalSettingsRewindKeep;
+
+  /// No description provided for @settingsTransferTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Move to Another Computer'**
+  String get settingsTransferTitle;
+
+  /// No description provided for @settingsTransferDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Your settings, keybindings and upstreams with their models, in one file to import on the other computer.'**
+  String get settingsTransferDescription;
+
+  /// No description provided for @settingsTransferLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Settings file'**
+  String get settingsTransferLabel;
+
+  /// No description provided for @settingsTransferExport.
+  ///
+  /// In en, this message translates to:
+  /// **'Export…'**
+  String get settingsTransferExport;
+
+  /// No description provided for @settingsTransferImport.
+  ///
+  /// In en, this message translates to:
+  /// **'Import…'**
+  String get settingsTransferImport;
+
+  /// No description provided for @settingsTransferExportQuestion.
+  ///
+  /// In en, this message translates to:
+  /// **'Export your settings?'**
+  String get settingsTransferExportQuestion;
+
+  /// No description provided for @settingsTransferExportDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'Settings, keybindings and upstreams go into the file. The upstreams\' API keys only if you tick the box below: they are then in the file as plain text, so keep it to yourself and delete it once imported.'**
+  String get settingsTransferExportDetail;
+
+  /// No description provided for @settingsTransferWithKeys.
+  ///
+  /// In en, this message translates to:
+  /// **'Include the upstreams\' API keys'**
+  String get settingsTransferWithKeys;
+
+  /// No description provided for @settingsTransferExported.
+  ///
+  /// In en, this message translates to:
+  /// **'Exported to {path}'**
+  String settingsTransferExported(String path);
+
+  /// No description provided for @settingsTransferImportQuestion.
+  ///
+  /// In en, this message translates to:
+  /// **'Import the settings in {file}?'**
+  String settingsTransferImportQuestion(String file);
+
+  /// No description provided for @settingsTransferImportDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'Its settings, keybindings and upstreams replace yours; settings it does not have stay as they are.'**
+  String get settingsTransferImportDetail;
+
+  /// No description provided for @settingsTransferImported.
+  ///
+  /// In en, this message translates to:
+  /// **'Imported. Some settings take effect once BaoCode restarts.'**
+  String get settingsTransferImported;
+
+  /// No description provided for @settingsTransferNotAFile.
+  ///
+  /// In en, this message translates to:
+  /// **'This is not a settings file BaoCode exported.'**
+  String get settingsTransferNotAFile;
+
+  /// No description provided for @settingsTransferFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Not done: {error}'**
+  String settingsTransferFailed(String error);
+
+  /// No description provided for @generalSettingsSessionTools.
+  ///
+  /// In en, this message translates to:
+  /// **'Agents can coordinate other conversations'**
+  String get generalSettingsSessionTools;
+
+  /// No description provided for @generalSettingsSessionToolsDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'An agent can list your other conversations, read where they stand without waking them, hand them work (resumed if stopped, queued if busy) and wait for them. For one conversation that coordinates the others; agents started after the change have it.'**
+  String get generalSettingsSessionToolsDescription;
+
+  /// No description provided for @generalSettingsCommandLine.
+  ///
+  /// In en, this message translates to:
+  /// **'Command Line'**
+  String get generalSettingsCommandLine;
+
+  /// No description provided for @baoBashRecommended.
+  ///
+  /// In en, this message translates to:
+  /// **'BaoCode Bash (recommended)'**
+  String get baoBashRecommended;
+
+  /// No description provided for @baoBashDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'A complete bash for agents on Windows: rg, grep, sed, awk, find, jq, tar and some 80 other common commands built in, no Git for Windows needed, and C:\\ and /c/ paths alike. The built-in core runs its agents\' commands with it.'**
+  String get baoBashDescription;
+
+  /// No description provided for @baoBashNotInstalled.
+  ///
+  /// In en, this message translates to:
+  /// **'Not installed: agents run commands with Git Bash, or with cmd.exe where there is none.'**
+  String get baoBashNotInstalled;
+
+  /// No description provided for @baoBashInstalled.
+  ///
+  /// In en, this message translates to:
+  /// **'Version {version} installed.'**
+  String baoBashInstalled(String version);
+
+  /// No description provided for @baoBashUpdateAvailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Version {version} is out.'**
+  String baoBashUpdateAvailable(String version);
+
+  /// No description provided for @baoBashDownloading.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading… {percent}%'**
+  String baoBashDownloading(int percent);
+
+  /// No description provided for @baoBashInstall.
+  ///
+  /// In en, this message translates to:
+  /// **'Install'**
+  String get baoBashInstall;
+
+  /// No description provided for @baoBashInstallSize.
+  ///
+  /// In en, this message translates to:
+  /// **'Install ({size})'**
+  String baoBashInstallSize(String size);
+
+  /// No description provided for @baoBashUpdate.
+  ///
+  /// In en, this message translates to:
+  /// **'Update'**
+  String get baoBashUpdate;
+
+  /// No description provided for @baoBashUninstall.
+  ///
+  /// In en, this message translates to:
+  /// **'Uninstall'**
+  String get baoBashUninstall;
+
+  /// No description provided for @baoBashFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not install it: {error}'**
+  String baoBashFailed(String error);
+
+  /// No description provided for @baoBashNoticeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'On Windows, BaoCode Bash is recommended'**
+  String get baoBashNoticeTitle;
+
+  /// No description provided for @baoBashNoticeBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Agents run commands more reliably with it. It brings bash with rg, grep, sed, awk, find, jq, tar and some 80 other common commands, no Git for Windows needed; it takes C:\\ and /c/ paths alike, so commands no longer fail on the differences between cmd and PowerShell.'**
+  String get baoBashNoticeBody;
+
+  /// No description provided for @baoBashNoticeLater.
+  ///
+  /// In en, this message translates to:
+  /// **'Not Now'**
+  String get baoBashNoticeLater;
 }
 
 class _AppLocalizationsDelegate

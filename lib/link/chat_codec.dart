@@ -27,12 +27,20 @@ abstract final class ChatCodec {
   static const botToUser = 'private';
 
   /// What [item] sent the user in private, if it is a bot's message so
-  /// ([botSendTool]), sent.
+  /// ([botSendTool]), sent: its words; empty for pictures alone (in its
+  /// images).
   static String? botSentToUser(ChatItem item) => switch (item) {
-    ToolCallItem(tool: botSendTool, :final input, status: ToolStatus.succeeded)
+    ToolCallItem(
+      tool: botSendTool,
+      :final input,
+      :final images,
+      status: ToolStatus.succeeded,
+    )
         when input['to'] == botToUser =>
       switch (input['text']) {
         final String text when text.trim().isNotEmpty => text.trim(),
+        // Pictures alone.
+        _ when images.isNotEmpty => '',
         _ => null,
       },
     _ => null,
@@ -49,6 +57,20 @@ abstract final class ChatCodec {
   /// The tag a bot wraps one of the user's agents' ids in, to show it in
   /// its chat as a card that opens it.
   static const botCardTag = 'bot_show_chat';
+
+  /// The tag a bot that has a group's conversation wraps the name of the
+  /// one it passes it to in.
+  static const botNextTag = 'bot_next';
+
+  /// Whom a bot's reply [text] passes a group's conversation to
+  /// ([botNextTag]): the last it names, if it does.
+  static String? botNext(String text) => switch (RegExp(
+    '<$botNextTag>(.*?)</$botNextTag>',
+    dotAll: true,
+  ).allMatches(text).lastOrNull?[1]?.trim()) {
+    final name? when name.isNotEmpty => name,
+    _ => null,
+  };
 
   /// The tag a bot wraps each of what the user might say next in, at the
   /// end of its reply, when they turned that on: a tap away from sent.
@@ -129,15 +151,34 @@ abstract final class ChatCodec {
   /// messages ([botSayTag]), its narration ([botNarrateTag]) and the
   /// agents it shows ([botCardTag], their ids). Its [voiceCue]s kept.
   static List<(String tag, String text)> botParts(String text) => [
-    for (final match in _botParts.allMatches(text))
-      if (match[2]!.trim() case final part when part.isNotEmpty)
-        (match[1]!, part),
+    for (final (:tag, :text, ref: _) in botPartsOf(text)) (tag, text),
   ];
 
+  /// [botParts], each with the message of its group's it answers, if it
+  /// says: `<bot_say ref="74">` ([botRefAttribute]), its number.
+  static List<({String tag, String text, int? ref})> botPartsOf(
+    String text,
+  ) => [
+    for (final match in _botParts.allMatches(text))
+      if (match[3]!.trim() case final part when part.isNotEmpty)
+        (
+          tag: match[1]!,
+          text: part,
+          ref: int.tryParse(_botRef.firstMatch(match[2] ?? '')?.group(1) ?? ''),
+        ),
+  ];
+
+  /// What a bot's message in a group answers, its number there:
+  /// `<bot_say ref="74">`.
+  static const botRefAttribute = 'ref';
+
   static final _botParts = RegExp(
-    '<($botSayTag|$botNarrateTag|$botCardTag)>(.*?)</\\1>',
+    '<($botSayTag|$botNarrateTag|$botCardTag)((?:\\s+[a-z]+="[^"]*")*)\\s*>'
+    '(.*?)</\\1>',
     dotAll: true,
   );
+
+  static final _botRef = RegExp('$botRefAttribute="\\s*#?(\\d+)\\s*"');
 
   /// What a bot's reply [text] suggests the user say next
   /// ([botSuggestTag]), each once closed: not among what it shows.
@@ -268,6 +309,7 @@ abstract final class ChatCodec {
       'activity': ?item.activity,
       'startedAt': ?item.startedAt?.millisecondsSinceEpoch,
       'duration': ?item.duration?.inMilliseconds,
+      'ranBefore': ?item.ranBefore?.inMilliseconds,
       'model': ?item.model,
       if (item.children.isNotEmpty)
         'children': [for (final child in item.children) encode(child)],
@@ -411,6 +453,7 @@ abstract final class ChatCodec {
         ],
         result: optional('result'),
         background: json['background'] == true,
+        ranBefore: duration('ranBefore'),
       ),
       'notice' => NoticeItem(
         named(NoticeKind.values, 'kind', NoticeKind.info),

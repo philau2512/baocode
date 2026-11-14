@@ -16,10 +16,12 @@ import 'package:bao_editor/monaco/flutter/language_assets.dart';
 
 import 'base/quiet_view.dart';
 import 'base/smooth_scroll.dart' show BaoScrollBehavior;
+import 'bash_exe/bao_bash.dart';
 import 'bots/bots.dart';
 import 'browser/browser_bridge.dart';
 import 'browser/browser_tools.dart' show BrowserHistory;
 import 'chat/composer/composer_files.dart' show ComposerFile, pastedAsPicture;
+import 'chat/chat_session.dart';
 import 'chat/chat_width.dart';
 import 'chat/reply_scroll.dart';
 import 'chat/edit_detail.dart';
@@ -63,6 +65,7 @@ import 'kernel/claude_code/turn_stats_stub.dart'
 import 'kernel/commit_attribution.dart';
 import 'kernel/extension_switches.dart';
 import 'kernel/prompt_suggestions.dart';
+import 'workspace/session_tools.dart';
 import 'chat/composer/composer_polish.dart' show ComposerPolishSetting;
 import 'kernel/queued_messages.dart';
 import 'keybindings/keybindings_sync.dart';
@@ -226,6 +229,7 @@ Future<void> main(List<String> arguments) async {
         ? null
         : PreferenceStore.file(
             p.join(DataDirectory.current.stateDir, 'drafts.json'),
+            true,
           ),
     // The data folder's icons/, the upstreams of models' pictures too.
     icons: IconLibrary.current = IconLibrary(storage: IconStorage.directory()),
@@ -310,6 +314,9 @@ Future<void> main(List<String> arguments) async {
         AttentionSettings.parse(files?.settings.values ?? const {}).tray,
   );
   await windows.start();
+  // The `code` command of the remote hosts' terminals (see ServerCli).
+  SshHosts.instance.onCode = (host, client, cwd, args) =>
+      windows.handleRemoteCode(host, cwd, args, stat: client.stat);
   // The stash (docs/stash.md): its shortcut works from any app, its panel
   // made hidden a moment after the windows, to show at once.
   if (files != null) {
@@ -413,6 +420,10 @@ Future<void> main(List<String> arguments) async {
       link: link,
       customizations: customizations,
     );
+    // Before the feature tips start: they tell it whether the app ran
+    // here before.
+    BaoBash.current = settings.bash?..noteStart();
+    ChatSession.userSent = BaoBash.current?.countSent;
     _startTelemetry(files, link);
   }
   // The theme extensions (lib/extensions/): color and file icon themes
@@ -478,6 +489,9 @@ void followSettingsFiles(SettingsFiles files) {
   QueuedMessages.current = () =>
       QueuedMessages.parse(files.settings[QueuedMessages.settingKey]);
   // Read as each agent starts, and as each message is sent.
+  SessionToolsSetting.current = () => SessionToolsSetting.enabled(
+    files.settings[SessionToolsSetting.settingKey],
+  );
   PromptSuggestions.current = () =>
       PromptSuggestions.enabled(files.settings[PromptSuggestions.settingKey]);
   // The composer's Polish button, shown or not as it changes.
