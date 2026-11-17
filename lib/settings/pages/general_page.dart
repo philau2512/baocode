@@ -390,8 +390,10 @@ class GeneralSettingsPage extends StatelessWidget {
                   value: SessionToolsSetting.enabled(
                     settings?[SessionToolsSetting.settingKey],
                   ),
-                  onChanged: (on) =>
-                      _write(SessionToolsSetting.settingKey, on ? true : null),
+                  onChanged: (on) => _write(
+                    SessionToolsSetting.settingKey,
+                    on ? null : SessionToolsSetting.off,
+                  ),
                 ),
                 SettingsSwitchRow(
                   label: l10n.generalSettingsComposerPolish,
@@ -453,9 +455,7 @@ class GeneralSettingsPage extends StatelessWidget {
             if (bash case final bash?)
               SettingsGroup(
                 title: l10n.generalSettingsCommandLine,
-                children: [
-                  SettingsCard(children: [BaoBashSetting(bash: bash)]),
-                ],
+                children: [CommandLineSettings(bash: bash)],
               ),
             SettingsGroup(
               title: l10n.generalSettingsWindows,

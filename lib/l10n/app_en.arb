@@ -693,6 +693,26 @@
     "description": "A browser step's verb while it runs (see browserStepDone).",
     "placeholders": {"action": {"type": "String"}}
   },
+  "sessionStepDone": "{action, select, new{Started} send{Handed work to} wait{Waited for} read{Read} stop{Stopped} changes{Checked the changes of} list{Listed the conversations} other{Coordinated}}",
+  "@sessionStepDone": {
+    "description": "A coordinating step's verb once done, by the session tool it called; the conversation's title follows.",
+    "placeholders": {"action": {"type": "String"}}
+  },
+  "sessionStepRunning": "{action, select, new{Starting} send{Handing work to} wait{Waiting for} read{Reading} stop{Stopping} changes{Checking the changes of} list{Listing the conversations} other{Coordinating}}",
+  "@sessionStepRunning": {
+    "description": "A coordinating step's verb while it runs (see sessionStepDone).",
+    "placeholders": {"action": {"type": "String"}}
+  },
+  "sessionOpen": "Open the conversation",
+  "sessionStatus": "{status, select, running{Working} waiting{Waiting on you} done{Done} failed{Failed} other{}}",
+  "@sessionStatus": {
+    "description": "How a conversation handed work stands, in the strip over the composer.",
+    "placeholders": {"status": {"type": "String"}}
+  },
+  "sessionAnswer": "Answer",
+  "@sessionAnswer": {"description": "Goes to a conversation that waits on the user, to answer it there."},
+  "sessionShowMore": "Show more",
+  "sessionShowLess": "Show less",
   "sidePanelPlan": "Plan",
   "@sidePanelPlan": {
     "description": "The side panel's plan page: the plan the agent wrote in plan mode, shown while there is one."
@@ -1420,6 +1440,7 @@
   "imagePickDecline": "Skip",
   "imageSetDefault": "Set as default",
   "imageDefaultSet": "Set as default image model",
+  "imageCopyPrompt": "Copy prompt",
   "toolProposingGoal": "Proposing a goal",
   "toolProposedGoal": "Proposed a goal",
   "goalAdopt": "Set as goal",
@@ -2137,6 +2158,10 @@
   "queuedEdit": "Take back to edit",
   "queuedSendNow": "Stop the agent and send this now",
   "queuedRemove": "Remove from the queue",
+  "replySuggestionHint": "Click to put it in the input, double-click to send it",
+  "@replySuggestionHint": {
+    "description": "Hover of a reply the agent suggests, over the composer."
+  },
   "stopConfirmMessage": "Stop the agent?",
   "stopConfirmDetail": "{count, plural, =1{The task running in the background will stop too.} other{The {count} tasks running in the background will stop too.}}",
   "@stopConfirmDetail": {
@@ -2521,11 +2546,11 @@
   "@generalSettingsQueuedDuringTurn": {
     "description": "Queued messages choice: the agent reads it in the turn running, between its tool calls, as Claude Code does in its own terminal."
   },
-  "generalSettingsPromptSuggestions": "Suggest Next Prompt",
+  "generalSettingsPromptSuggestions": "Suggest Replies",
   "@generalSettingsPromptSuggestions": {
-    "description": "Settings → General switch: whether Claude Code suggests the next prompt in the composer after each turn."
+    "description": "Settings → General switch: whether the agent suggests, at the end of each turn, what the user might send next, shown over the composer."
   },
-  "generalSettingsPromptSuggestionsDescription": "After each turn, a greyed-out suggestion for your next message, taken with Tab. Each one is an extra request with the whole conversation; turn it off to save tokens. Applies from the next message; Claude Code only.",
+  "generalSettingsPromptSuggestionsDescription": "After each turn, two or three things you might send next, over the composer: click one to put it in the input and edit it, double-click to send it as it is; Tab in an empty input takes the first. The agent writes them at the end of its reply, with no extra request. Applies from the next message.",
   "generalSettingsCommitAttributionLabel": "Commit Attribution: {name}",
   "@generalSettingsCommitAttributionLabel": {
     "description": "The commit attribution dropdown, as read out: its setting and the choice in effect.",
@@ -4925,7 +4950,7 @@
   },
   "quotaBarNone": "No account can be used",
   "quotaBarThisChat": "This chat",
-  "quotaBarRefresh": "Refresh Quota",
+  "quotaBarRefresh": "Refresh Quota Data",
   "modelsQuotaResetsIn": "resets in {time}",
   "@modelsQuotaResetsIn": {
     "placeholders": {
@@ -5246,6 +5271,25 @@
   },
   "modelsSwitchDetail": "Claude Code restarts on the other upstream and resumes this conversation (--resume). Its history is sent to the new model as it is; some upstreams take it slower the first time. A reply still running stops when you send the next message.",
   "modelsSwitchConfirm": "Switch",
+  "modelsFallbackHint": "{picked} flagged a message, so Claude Code answers on {fallback} instead. Switch back from the menu.",
+  "@modelsFallbackHint": {
+    "placeholders": {
+      "picked": {
+        "type": "String"
+      },
+      "fallback": {
+        "type": "String"
+      }
+    }
+  },
+  "modelsFallbackSwitchBack": "Switch Back to {name}",
+  "@modelsFallbackSwitchBack": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "modelsAuxiliary": "Auxiliary Model",
   "modelsAuxiliaryDescription": "Used for auxiliary work, such as generating conversation titles and commit messages. Automatic: the session's model (for commit messages, new sessions' default); an upstream's by its Haiku tier.",
   "modelsAuxiliaryAuto": "Automatic",
@@ -5726,28 +5770,7 @@
   "remoteSignInRefused": "That was not accepted. Try again.",
   "remoteSignInRemember": "Remember on this computer (in the system keychain)",
   "remoteSignInConnect": "Connect",
-  "remoteFolderPlaceholder": "A folder on {host}: pick one, or type a path",
-  "@remoteFolderPlaceholder": {
-    "placeholders": {
-      "host": {
-        "type": "String"
-      }
-    }
-  },
-  "remoteFolderRefresh": "Read the folders again",
-  "@remoteFolderRefresh": {
-    "description": "The button at the right of the quick pick browsing a remote host's folders: it lists the folder again, e.g. one made in a terminal since."
-  },
-  "remoteOpenThisFolder": "Open This Folder",
   "remoteParentFolder": "Parent Folder",
-  "remoteGoTo": "Go to {path}",
-  "@remoteGoTo": {
-    "placeholders": {
-      "path": {
-        "type": "String"
-      }
-    }
-  },
   "remoteListFailed": "Could not list {path}",
   "@remoteListFailed": {
     "placeholders": {
@@ -5765,30 +5788,6 @@
     }
   },
   "remoteFileHostPlaceholder": "Select a host, to browse its files",
-  "remoteFilePlaceholder": "A file on {host}: pick one, or type a path",
-  "@remoteFilePlaceholder": {
-    "placeholders": {
-      "host": {
-        "type": "String"
-      }
-    }
-  },
-  "remoteOpenFile": "Open {path}",
-  "@remoteOpenFile": {
-    "placeholders": {
-      "path": {
-        "type": "String"
-      }
-    }
-  },
-  "remoteOpenFailed": "Could not open {path}",
-  "@remoteOpenFailed": {
-    "placeholders": {
-      "path": {
-        "type": "String"
-      }
-    }
-  },
   "remoteRecentFiles": "Recent Remote Files",
   "remoteOpenFileOn": "Open File on {host}...",
   "@remoteOpenFileOn": {
@@ -7417,6 +7416,7 @@
   "browserSettingsEnabled": "Let Agents Use the Browser",
   "browserSettingsEnabledDescription": "When off, agents have no browser tools and the extension disconnects.",
   "browserSettingsStatus": "Status",
+  "browserSettingsStatusDescription": "Agents use the browser marked In Use; choose another to switch.",
   "browserSettingsNotInstalled": "No browser has connected yet",
   "browserSettingsNotInstalledDescription": "Install the extension either way below, then open the browser: it connects automatically.",
   "browserSettingsNotRunning": "No browser connected",
@@ -7429,6 +7429,11 @@
   "@browserSettingsIncompatible": {"description": "A browser connected whose extension BaoCode cannot use: one too old, or newer than the app.", "placeholders": {"browser": {"type": "String"}}},
   "browserSettingsExtensionVersion": "Extension {version}",
   "@browserSettingsExtensionVersion": {"description": "The version of BaoCode's extension in a connected browser.", "placeholders": {"version": {"type": "String"}}},
+  "browserSettingsUse": "Use This Browser",
+  "browserSettingsUsing": "In Use",
+  "browserSettingsChosenMissing": "The browser chosen is not connected",
+  "browserSettingsChosenMissingDescription": "{path}: agents use {browser} until it connects again.",
+  "@browserSettingsChosenMissingDescription": {"description": "Under browserSettingsChosenMissing: the chosen browser's executable, and the connected one used meanwhile.", "placeholders": {"path": {"type": "String"}, "browser": {"type": "String"}}},
   "browserSettingsExtensionOld": "The extension is out of date. From the store, it updates automatically, or click Update in chrome://extensions; installed manually, download the zip again, replace the folder's contents and click reload.",
   "browserSettingsAppOld": "The extension is newer than this BaoCode. Update BaoCode.",
   "browserSettingsNoFileAccess": "File access is off",
@@ -8933,11 +8938,11 @@
   "settingsTransferFailed": "Not done: {error}",
   "@settingsTransferFailed": {"placeholders": {"error": {"type": "String"}}},
   "generalSettingsSessionTools": "Agents can coordinate other conversations",
-  "generalSettingsSessionToolsDescription": "An agent can list your other conversations, read where they stand without waking them, hand them work (resumed if stopped, queued if busy) and wait for them. For one conversation that coordinates the others; agents started after the change have it.",
+  "generalSettingsSessionToolsDescription": "An agent can list your other conversations, read where they stand without waking them, start new ones or hand work to others (in a worktree of their own if need be), and hears back by itself when each is done, fails or waits on you; it can also stop them and see which files they changed. For one conversation that coordinates the others. Off, agents neither see nor act on other conversations, and those handed work no longer report back.",
   "generalSettingsCommandLine": "Command Line",
   "baoBashRecommended": "BaoCode Bash (recommended)",
-  "baoBashDescription": "A complete bash for agents on Windows: rg, grep, sed, awk, find, jq, tar and some 80 other common commands built in, no Git for Windows needed, and C:\\ and /c/ paths alike. The built-in core runs its agents' commands with it.",
-  "baoBashNotInstalled": "Not installed: agents run commands with Git Bash, or with cmd.exe where there is none.",
+  "baoBashDescription": "A complete bash for agents on Windows: rg, grep, sed, awk, find, jq, tar and some 80 other common commands built in, no Git for Windows needed, and C:\\ and /c/ paths alike. Both the built-in core and Claude Code's run their agents' commands with it.",
+  "baoBashNotInstalled": "Not installed yet.",
   "baoBashInstalled": "Version {version} installed.",
   "@baoBashInstalled": {
     "placeholders": {
@@ -8983,5 +8988,75 @@
   },
   "baoBashNoticeTitle": "On Windows, BaoCode Bash is recommended",
   "baoBashNoticeBody": "Agents run commands more reliably with it. It brings bash with rg, grep, sed, awk, find, jq, tar and some 80 other common commands, no Git for Windows needed; it takes C:\\ and /c/ paths alike, so commands no longer fail on the differences between cmd and PowerShell.",
-  "baoBashNoticeLater": "Not Now"
+  "baoBashNoticeLater": "Not Now",
+  "baoBashSource": "Open source:",
+  "baoBashHintInstall": "Install and Use",
+  "commandLineShell": "Shell",
+  "commandLineShellDescription": "What agents run their commands in on Windows. Claude Code's CLI core takes bash alone: with cmd or PowerShell picked, it runs Git Bash.",
+  "commandLineShellCustom": "Custom…",
+  "commandLineShellInUse": "In use: {path}",
+  "@commandLineShellInUse": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "commandLineShellFallback": "{shell} is not ready yet: commands run in {path} meanwhile.",
+  "@commandLineShellFallback": {
+    "placeholders": {
+      "shell": {
+        "type": "String"
+      },
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "commandLineCustomPath": "Custom shell",
+  "commandLineCustomPathDescription": "The program to run commands with: a bash.exe, cmd.exe, powershell.exe or pwsh.exe.",
+  "remoteBrowserFolderTitle": "Open a Folder on {host}",
+  "@remoteBrowserFolderTitle": {"placeholders": {"host": {"type": "String"}}},
+  "remoteBrowserFileTitle": "Open a File on {host}",
+  "@remoteBrowserFileTitle": {"placeholders": {"host": {"type": "String"}}},
+  "remoteBrowserPlaces": "Locations",
+  "remoteBrowserRecent": "Recent Locations",
+  "remoteBrowserHome": "Home",
+  "remoteBrowserThisPc": "This PC",
+  "remoteBrowserRoot": "Root",
+  "remoteBrowserLocalDisk": "Local Disk ({drive})",
+  "@remoteBrowserLocalDisk": {"placeholders": {"drive": {"type": "String"}}},
+  "remoteBrowserBack": "Back",
+  "remoteBrowserForward": "Forward",
+  "remoteBrowserRefresh": "Refresh",
+  "remoteBrowserFilter": "Filter",
+  "remoteBrowserView": "View Options",
+  "remoteBrowserShowHidden": "Hidden Items",
+  "remoteBrowserShowSystem": "Protected Operating System Files",
+  "remoteBrowserNewFolder": "New Folder",
+  "remoteBrowserOpen": "Open",
+  "remoteBrowserEmpty": "This folder is empty.",
+  "remoteBrowserNoFolders": "No folders here.",
+  "remoteBrowserNoMatch": "Nothing here matches “{filter}”.",
+  "@remoteBrowserNoMatch": {"placeholders": {"filter": {"type": "String"}}},
+  "remoteBrowserHiddenCount": "{count, plural, =1{1 hidden item} other{{count} hidden items}}",
+  "@remoteBrowserHiddenCount": {"placeholders": {"count": {"type": "int"}}},
+  "remoteBrowserShowHiddenNow": "Show",
+  "remoteBrowserEditPath": "Go to a Path",
+  "remoteBrowserPathPlaceholder": "A path: ~/code, /srv/app, D:\\work",
+  "remoteBrowserNotFound": "{path} does not exist.",
+  "@remoteBrowserNotFound": {"placeholders": {"path": {"type": "String"}}},
+  "remoteBrowserNotFolder": "{path} is a file, not a folder.",
+  "@remoteBrowserNotFolder": {"placeholders": {"path": {"type": "String"}}},
+  "remoteBrowserMakeFailed": "Could not make the folder: {error}",
+  "@remoteBrowserMakeFailed": {"placeholders": {"error": {"type": "String"}}},
+  "remoteBrowserFolderAction": "Open Folder",
+  "remoteBrowserFileAction": "Open File",
+  "remoteBrowserSaveTitle": "Save to {host}",
+  "@remoteBrowserSaveTitle": {"placeholders": {"host": {"type": "String"}}},
+  "remoteBrowserSaveAction": "Save As",
+  "remoteBrowserSaveName": "Save As:",
+  "remoteBrowserSave": "Save",
+  "remoteBrowserReplace": "“{name}” already exists. Replace it?",
+  "@remoteBrowserReplace": {"placeholders": {"name": {"type": "String"}}}
 }

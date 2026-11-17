@@ -21,7 +21,6 @@ import 'bots/bots.dart';
 import 'browser/browser_bridge.dart';
 import 'browser/browser_tools.dart' show BrowserHistory;
 import 'chat/composer/composer_files.dart' show ComposerFile, pastedAsPicture;
-import 'chat/chat_session.dart';
 import 'chat/chat_width.dart';
 import 'chat/reply_scroll.dart';
 import 'chat/edit_detail.dart';
@@ -70,6 +69,7 @@ import 'chat/composer/composer_polish.dart' show ComposerPolishSetting;
 import 'kernel/queued_messages.dart';
 import 'keybindings/keybindings_sync.dart';
 import 'link/link_host.dart';
+import 'link/link_quota.dart';
 import 'keybindings/keymap.dart';
 import 'keybindings/vscode_import.dart';
 import 'l10n/l10n.dart';
@@ -272,6 +272,10 @@ Future<void> main(List<String> arguments) async {
           workspace: workspace,
           customizations: customizations,
           bots: bots,
+          quota: LinkQuota(
+            providers: ModelProviders.current,
+            codex: codexService,
+          ),
         );
   if (bots != null && link != null) {
     // The bots are the phones': with none paired, told of nothing.
@@ -420,10 +424,7 @@ Future<void> main(List<String> arguments) async {
       link: link,
       customizations: customizations,
     );
-    // Before the feature tips start: they tell it whether the app ran
-    // here before.
-    BaoBash.current = settings.bash?..noteStart();
-    ChatSession.userSent = BaoBash.current?.countSent;
+    BaoBash.current = settings.bash;
     _startTelemetry(files, link);
   }
   // The theme extensions (lib/extensions/): color and file icon themes
@@ -631,11 +632,14 @@ void followSettingsFiles(SettingsFiles files) {
     files.settings,
     () => files.settings[SidebarTimes.settingKey],
   );
-  // Settings → Browser: whether the agents may use the user's browsers.
-  BrowserBridge.instance.follow(
-    files.settings,
-    () => files.settings[BrowserBridge.settingKey],
-  );
+  // Settings → Browser: whether the agents may use the user's browsers,
+  // and which one they use.
+  BrowserBridge.instance
+    ..follow(files.settings, () => files.settings[BrowserBridge.settingKey])
+    ..followPreferred(
+      files.settings,
+      () => files.settings[BrowserBridge.preferredKey],
+    );
   // Settings → Browser: whether the history keeps bodies and steps too.
   BrowserHistory.instance.follow(
     files.settings,

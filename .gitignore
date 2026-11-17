@@ -65,3 +65,10 @@ app.*.map.json
 tool/exthost_codegen/node_modules/
 .claude/
 plans/
+
+# Wrangler (the site's deploys): its cache names the Cloudflare account it
+# last ran as; local secrets for it go in .dev.vars or .env.
+.wrangler/
+.dev.vars*
+.env
+.env.*
