@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import '../../icons/site_icons.dart';
 import '../../kernel/agy/agy_mcp_plugin.dart';
 import '../../l10n/l10n.dart';
 import '../../theme/app_theme.dart';
@@ -16,9 +17,13 @@ import '../side_panel/file_open.dart';
 import 'content_image.dart';
 import 'hover_builder.dart';
 import 'step_header.dart';
+import 'web_step_icons.dart';
 
 /// A message to another agent's icon (Remix Icon's speak-ai-line).
 const speakIcon = 'assets/icons/speak-ai-line.svg';
+
+/// An MCP tool call's icon (Simple Icons' modelcontextprotocol).
+const mcpIcon = 'assets/icons/mcp.svg';
 
 /// A todo's mark by its status (Remix Icon's): done, in progress, to do.
 const todoDoneIcon = 'assets/icons/checkbox-circle-fill.svg';
@@ -175,7 +180,30 @@ class ToolCallRow extends StatelessWidget {
     final todo = kind == ToolKind.todo
         ? todoStep(tool, input, target, output: output, l10n: context.l10n)
         : null;
-    Widget header = StepHeader(
+    final isWebSearch =
+        kind == ToolKind.web && isWebSearchTool(tool: tool, target: target);
+    final fetchSite = kind == ToolKind.web && !isWebSearch
+        ? webFetchSite(target)
+        : null;
+    final searchIcons = isWebSearch && status != ToolStatus.failed
+        ? [
+            for (final site in webSearchResultSites(output))
+              FoldWebSiteIcon(site),
+          ]
+        : const <FoldWebIcon>[];
+    final hasWebTrailing = isWebSearch && status != ToolStatus.failed;
+    final hasImages = images.isNotEmpty && status != ToolStatus.failed;
+    final trailing = !hasWebTrailing && !hasImages
+        ? null
+        : Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (hasWebTrailing)
+                StepWebIcons(icons: searchIcons, shown: !expanded),
+              if (hasImages) StepThumbnails(images: _images, shown: !expanded),
+            ],
+          );
+    Widget buildHeader(Widget? icon) => StepHeader(
       verb:
           label ??
           todo?.verb ??
@@ -190,53 +218,9 @@ class ToolCallRow extends StatelessWidget {
       onToggle: file == null && _opens ? onToggle : null,
       onOpen: file == null ? null : () => files!.onOpen(file),
       openTooltip: file == null ? null : context.l10n.sidePanelOpenFile,
-      icon: switch ((kind, path)) {
-        (ToolKind.read || ToolKind.edit, final filePath?) => FileIcon(
-          _cleanFileLabel(filePath),
-          size: 15,
-        ),
-        // A message to another agent: someone speaking, standing out.
-        (ToolKind.message, _) => SvgPicture.asset(
-          speakIcon,
-          width: 15,
-          height: 15,
-          colorFilter: ColorFilter.mode(_amber, BlendMode.srcIn),
-        ),
-        (ToolKind.goal, _) => Icon(
-          Icons.flag_outlined,
-          size: 15,
-          color: _amber,
-        ),
-        (ToolKind.todo, _) => Icon(
-          Icons.checklist_rounded,
-          size: 15,
-          color: AppColors.textMuted,
-        ),
-        (ToolKind.web, _) => Icon(
-          Icons.travel_explore_rounded,
-          size: 15,
-          color: AppColors.textMuted,
-        ),
-        _ => switch (tool?.toLowerCase()) {
-          'schedule' => Icon(
-            Icons.schedule_rounded,
-            size: 15,
-            color: AppColors.textMuted,
-          ),
-          'manage_task' || 'manage_subagents' => Icon(
-            label?.toLowerCase().contains('timer') == true
-                ? Icons.schedule_rounded
-                : Icons.task_alt_rounded,
-            size: 15,
-            color: AppColors.textMuted,
-          ),
-          _ => null,
-        },
-      },
+      icon: icon,
       trailingGap: 0,
-      trailing: images.isEmpty || status == ToolStatus.failed
-          ? null
-          : StepThumbnails(images: _images, shown: !expanded),
+      trailing: trailing,
       action: switch ((file, _opens, onToggle, kind, _shown, onSetGoal)) {
         (_?, true, final toggle?, _, _, _) => _OutputToggle(
           expanded: expanded,
@@ -248,6 +232,74 @@ class ToolCallRow extends StatelessWidget {
         _ => null,
       },
     );
+    Widget header = fetchSite != null
+        ? ListenableBuilder(
+            listenable: SiteIcons.current,
+            builder: (context, _) {
+              final siteIcon = SiteIcons.current.of(fetchSite);
+              return buildHeader(
+                webIconSwitcher(
+                  child: siteIcon == null
+                      ? KeyedSubtree(
+                          key: const ValueKey('globe'),
+                          child: webSearchGlobe(),
+                        )
+                      : KeyedSubtree(
+                          key: const ValueKey('favicon'),
+                          child: webSiteFavicon(siteIcon),
+                        ),
+                ),
+              );
+            },
+          )
+        : buildHeader(switch ((kind, path)) {
+            (ToolKind.read || ToolKind.edit, final filePath?) => FileIcon(
+              _cleanFileLabel(filePath),
+              size: 15,
+            ),
+            // A message to another agent: someone speaking, standing out.
+            (ToolKind.message, _) => SvgPicture.asset(
+              speakIcon,
+              width: 14,
+              height: 14,
+              colorFilter: ColorFilter.mode(_amber, BlendMode.srcIn),
+            ),
+            (ToolKind.goal, _) => Icon(
+              Icons.flag_outlined,
+              size: 15,
+              color: _amber,
+            ),
+            (ToolKind.todo, _) => Icon(
+              Icons.checklist_rounded,
+              size: 15,
+              color: AppColors.textMuted,
+            ),
+            (ToolKind.web, _) => webSearchGlobe(),
+            (ToolKind.mcp, _) => SvgPicture.asset(
+              mcpIcon,
+              width: 13,
+              height: 13,
+              colorFilter: ColorFilter.mode(
+                AppColors.textMuted,
+                BlendMode.srcIn,
+              ),
+            ),
+            _ => switch (tool?.toLowerCase()) {
+              'schedule' => Icon(
+                Icons.schedule_rounded,
+                size: 15,
+                color: AppColors.textMuted,
+              ),
+              'manage_task' || 'manage_subagents' => Icon(
+                label?.toLowerCase().contains('timer') == true
+                    ? Icons.schedule_rounded
+                    : Icons.task_alt_rounded,
+                size: 15,
+                color: AppColors.textMuted,
+              ),
+              _ => null,
+            },
+          });
     // A file read or edit shows only its name: the whole path on hover.
     if ((kind == ToolKind.read || kind == ToolKind.edit) && path != null) {
       header = HoverTooltip(content: _pathTooltip, child: header);

@@ -1394,6 +1394,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get quickOpenNoMatchingResults => 'No matching results';
 
   @override
+  String quickOpenTooManyFiles(int count) {
+    return 'Only the first $count files are searched: this project has more';
+  }
+
+  @override
   String get quickOpenRecentlyUsed => 'recently used';
 
   @override
@@ -1637,6 +1642,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'stop': 'Stopped',
       'changes': 'Checked the changes of',
       'list': 'Listed the conversations',
+      'models': 'Checked the models',
       'other': 'Coordinated',
     });
     return '$_temp0';
@@ -1652,6 +1658,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'stop': 'Stopping',
       'changes': 'Checking the changes of',
       'list': 'Listing the conversations',
+      'models': 'Checking the models',
       'other': 'Coordinating',
     });
     return '$_temp0';
@@ -2730,6 +2737,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get turnCopy => 'Copy reply';
 
   @override
+  String get turnFork => 'Fork from here';
+
+  @override
   String get turnCopied => 'Copied';
 
   @override
@@ -2844,6 +2854,31 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get activityCompacting => 'Compacting conversation';
+
+  @override
+  String get noticeCompacted => 'Conversation compacted';
+
+  @override
+  String get noticeCompactedAuto => 'Conversation compacted automatically';
+
+  @override
+  String get noticeCompactedTooLong =>
+      'Conversation compacted early: the provider refused it as too long for the model';
+
+  @override
+  String noticeCompactedTooLongWindow(String window) {
+    return 'Conversation compacted early: the provider refused it as too long for the model, which takes less than the $window context set';
+  }
+
+  @override
+  String noticeCompactedTokens(String tokens) {
+    return '$tokens tokens';
+  }
+
+  @override
+  String noticeCompactedFromTo(String before, String after) {
+    return '$before → $after tokens';
+  }
 
   @override
   String get activityPlanning => 'Planning next move';
@@ -4950,6 +4985,43 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String langError(String id) {
+    return '$id reported an error';
+  }
+
+  @override
+  String langWarning(String id) {
+    return '$id reported a warning';
+  }
+
+  @override
+  String get langClickForDetails => 'Click for log and settings';
+
+  @override
+  String get langViewLog => 'View Log';
+
+  @override
+  String get langOpenLspSettings => 'Open LSP Settings';
+
+  @override
+  String get langServerLogLabel => 'LSP Log';
+
+  @override
+  String langNoLogOutput(String id) {
+    return 'No log output from $id yet.';
+  }
+
+  @override
+  String langServerInitializing(String id) {
+    return '$id is still initializing (click the status bar for details)';
+  }
+
+  @override
+  String langServerImportError(String id) {
+    return '$id failed to load the project (click the status bar for details)';
+  }
+
+  @override
   String langRestarting(String id) {
     return '$id: restarting…';
   }
@@ -6747,6 +6819,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Sign in with ChatGPT to use Codex models on your plan\'s quota. With several accounts, requests are spread across them by the load balancing below, and one out of quota gives way to the next.';
 
   @override
+  String get modelsAccountsDescriptionAntigravity =>
+      'Sign in with Google to use Antigravity\'s models (Gemini, Claude) on your plan\'s quota, always on BaoCode\'s own core. Each group of models has a quota of its own: an account out of one gives way to the next for those models alone. Google may suspend an account it sees used outside Antigravity: use one you can afford to lose.';
+
+  @override
   String get modelsAccountsNone => 'No account yet';
 
   @override
@@ -6978,6 +7054,10 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get modelsAccountPortBusy =>
       'Port 1455, which sign-in comes back to, is used by another program (a proxy in Docker, or the Codex CLI signing in). Sign in in the browser all the same: the page it ends on will fail to load or show something else. Copy that page\'s full address and paste it below.';
+
+  @override
+  String get modelsAccountPortBusyAntigravity =>
+      'Port 51121, which sign-in comes back to, is used by another program (Antigravity itself, or a proxy signing in). Sign in in the browser all the same: the page it ends on will fail to load or show something else. Copy that page\'s full address and paste it below.';
 
   @override
   String get modelsAccountCallback => 'Address after sign-in';
@@ -7261,13 +7341,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Sends each conversation\'s own prompt_cache_key, so the upstream (or a relay in front of several) routes its requests to where the earlier ones are cached. Turn off for an upstream that rejects the field.';
 
   @override
-  String get modelsCodexVersion => 'Codex Version';
-
-  @override
-  String get modelsCodexVersionDescription =>
-      'The Codex CLI version requests are made as. The backend only lists models that version supports, so if new models are missing, enter a newer version and refresh the model list. Leave empty to use the app\'s default.';
-
-  @override
   String get modelsEnv => 'Extra Environment';
 
   @override
@@ -7468,18 +7541,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get modelsManage => 'Manage Models…';
-
-  @override
-  String modelsSwitchTitle(String name) {
-    return 'Switch to $name?';
-  }
-
-  @override
-  String get modelsSwitchDetail =>
-      'Claude Code restarts on the other upstream and resumes this conversation (--resume). Its history is sent to the new model as it is; some upstreams take it slower the first time. A reply still running stops when you send the next message.';
-
-  @override
-  String get modelsSwitchConfirm => 'Switch';
 
   @override
   String modelsFallbackHint(String picked, String fallback) {
@@ -7928,7 +7989,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get appearanceSettingsMinimapDescription =>
-      'A minimap of the whole conversation at the left of its column, where you are in it shown as you scroll; click or drag it to get somewhere. It stands in for the scrollbar, and is not shown in a window too narrow for it. Off: the scrollbar.';
+      'A minimap of the whole conversation beside its column, where you are in it shown as you scroll; click or drag it to get somewhere. It stands in for the scrollbar, and is not shown in a window too narrow for it. Off: the scrollbar.';
 
   @override
   String get appearanceSettingsWindowBlur => 'Native Window Blur';
@@ -7979,6 +8040,24 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get minimapElasticityBouncy => 'Bouncy';
+
+  @override
+  String get appearanceSettingsMinimapSide => 'Minimap Position';
+
+  @override
+  String get appearanceSettingsMinimapSideDescription =>
+      'Which side of the conversation\'s column the minimap is on. At the right it takes the scrollbar\'s place, below the side panel\'s buttons.';
+
+  @override
+  String appearanceSettingsMinimapSideLabel(String side) {
+    return 'Minimap position: $side';
+  }
+
+  @override
+  String get minimapSideLeft => 'Left';
+
+  @override
+  String get minimapSideRight => 'Right';
 
   @override
   String get appearanceSettingsCodeFont => 'Code Font';
@@ -8140,6 +8219,11 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String remoteConnectionLost(String host) {
+    return 'The connection to $host is lost, and being tried again by itself. What you send waits until it is back';
+  }
+
+  @override
   String get remoteRetry => 'Retry';
 
   @override
@@ -8204,6 +8288,11 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String remoteStatusFailed(String kind, String host) {
     return '$kind: $host (disconnected)';
+  }
+
+  @override
+  String remoteStatusDown(String kind, String host) {
+    return '$kind: $host (disconnected, retrying...)';
   }
 
   @override
@@ -8967,6 +9056,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sidebarHostDisconnected => 'Disconnected';
 
   @override
+  String get sidebarHostDown => 'Disconnected, retrying...';
+
+  @override
   String get sidebarHostIdle => 'Not connected';
 
   @override
@@ -9197,9 +9289,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Not a relay address; one looks like https://relay.example.com';
 
   @override
-  String get mobileRelayPinned => 'Relay Used';
-
-  @override
   String get mobileRelayCustom => 'Custom';
 
   @override
@@ -9208,6 +9297,24 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get mobileRelayCustomDescription =>
       'The address of a relay you run yourself (baocode-relay).';
+
+  @override
+  String get mobileRelayInUse => 'In use';
+
+  @override
+  String get mobileRelayMoveUp => 'Move Up';
+
+  @override
+  String get mobileRelayMoveDown => 'Move Down';
+
+  @override
+  String get mobileRelayRemove => 'Remove';
+
+  @override
+  String get mobileRelayAdd => 'Add Relay';
+
+  @override
+  String get mobileRelayAddPick => 'Choose…';
 
   @override
   String get mobileRelayMode => 'How';
@@ -9220,11 +9327,11 @@ class AppLocalizationsEn extends AppLocalizations {
       'BaoCode\'s relays, the nearest that answers.';
 
   @override
-  String get mobileRelayModePinned => 'Pick One';
+  String get mobileRelayModePinned => 'Your List';
 
   @override
   String get mobileRelayModePinnedDescription =>
-      'Only the one picked: one of BaoCode\'s, or a custom address.';
+      'The relays you list, in order: the next when one cannot be reached, and back to an earlier one once it can. BaoCode\'s, or custom addresses.';
 
   @override
   String get mobileRelayModeDirect => 'Direct Only';
@@ -9280,6 +9387,85 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsSectionStash => 'Stash';
+
+  @override
+  String get settingsSectionBuiltinCore => 'Built-in Core';
+
+  @override
+  String get settingsBuiltinCoreKeywords =>
+      'builtin core system prompt instructions agent';
+
+  @override
+  String get builtinCoreSettingsTitle => 'Built-in Core';
+
+  @override
+  String get builtinCoreSettingsDescription =>
+      'Customize the system prompt used by BaoCode\'s built-in core. Changes apply to new conversations; bots keep their own prompts.';
+
+  @override
+  String get builtinCoreSystemPromptGroup => 'System Prompt';
+
+  @override
+  String get builtinCoreSystemPromptMode => 'Mode';
+
+  @override
+  String builtinCoreSystemPromptModeLabel(String mode) {
+    return 'System Prompt: $mode';
+  }
+
+  @override
+  String get builtinCoreModeDefault => 'Default';
+
+  @override
+  String get builtinCoreModeAppend => 'Append to Default';
+
+  @override
+  String get builtinCoreModeReplace => 'Replace Default';
+
+  @override
+  String get builtinCoreModeDefaultDetail =>
+      'Uses BaoCode\'s default core instructions.';
+
+  @override
+  String get builtinCoreModeAppendDetail =>
+      'Keeps the default core instructions and appends your text at the end.';
+
+  @override
+  String get builtinCoreModeReplaceDetail =>
+      'Replaces the default core instructions while keeping auto memory, output style, CLAUDE.md, and formatting rules.';
+
+  @override
+  String get builtinCoreAppendLabel => 'Appended Instructions';
+
+  @override
+  String get builtinCoreAppendPlaceholder =>
+      'Write instructions to append to the default system prompt…';
+
+  @override
+  String get builtinCoreReplaceLabel => 'Custom Core Instructions';
+
+  @override
+  String get builtinCoreReplacePlaceholder =>
+      'Write the system prompt that replaces the default core instructions…';
+
+  @override
+  String get builtinCoreLoadDefault => 'Load Default';
+
+  @override
+  String get builtinCoreResetDefault => 'Reset to Default';
+
+  @override
+  String get builtinCoreDefaultPromptTitle => 'Default System Prompt';
+
+  @override
+  String get builtinCoreDefaultPromptDescription =>
+      'The built-in core instructions used when no replacement is set, for reference.';
+
+  @override
+  String get builtinCoreCopyDefault => 'Copy';
+
+  @override
+  String get builtinCoreCopiedDefault => 'Copied';
 
   @override
   String get settingsSectionCustomize => 'Customize';
@@ -14377,5 +14563,54 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String remoteBrowserReplace(String name) {
     return '“$name” already exists. Replace it?';
+  }
+
+  @override
+  String get composerApprovalAgyAutoDetail =>
+      'Approve edits and safe commands, ask before irreversible ones';
+
+  @override
+  String kernelSetupInstall(String kernel) {
+    return '$kernel isn\'t installed on this computer';
+  }
+
+  @override
+  String get kernelSetupInstallAction => 'Install';
+
+  @override
+  String kernelSetupInstalling(String kernel, int percent) {
+    return 'Installing $kernel… $percent%';
+  }
+
+  @override
+  String kernelSetupLogin(String kernel) {
+    return 'Sign in to $kernel to use it';
+  }
+
+  @override
+  String get kernelSetupLoginAction => 'Sign in';
+
+  @override
+  String get kernelSetupLoginOpening => 'Opening the sign-in page…';
+
+  @override
+  String get kernelSetupLoginCode =>
+      'Sign in on the page that opened, then paste the code it shows here.';
+
+  @override
+  String get kernelSetupCodeHint => 'Authorization code';
+
+  @override
+  String get kernelSetupSubmit => 'Submit';
+
+  @override
+  String get kernelSetupOpenPage => 'Open page';
+
+  @override
+  String get kernelSetupCancel => 'Cancel';
+
+  @override
+  String kernelSetupLocalOnly(String kernel) {
+    return '$kernel works only in projects on this computer';
   }
 }

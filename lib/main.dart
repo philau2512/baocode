@@ -36,6 +36,7 @@ import 'diagnostics/crash_reports.dart';
 import 'diagnostics/exit_watch.dart';
 import 'diagnostics/frame_watch.dart';
 import 'diagnostics/hang_watch.dart';
+import 'diagnostics/key_watch.dart';
 import 'diagnostics/diagnostics_upload.dart';
 import 'extensions/theme_extensions.dart';
 import 'ide/editor_minimap_setting.dart';
@@ -53,6 +54,7 @@ import 'icons/emoji_sheet.dart';
 import 'icons/icon_library.dart';
 import 'icons/icon_storage.dart';
 import 'icons/site_icons.dart';
+import 'kernel/antigravity/agy_runtime.dart';
 import 'kernel/claude_code/claude_code_kernel.dart';
 import 'kernel/claude_code/claude_core_setting.dart';
 import 'kernel/claude_code/claude_onboarding.dart';
@@ -73,6 +75,7 @@ import 'link/link_quota.dart';
 import 'keybindings/keymap.dart';
 import 'keybindings/vscode_import.dart';
 import 'l10n/l10n.dart';
+import 'models/codex/codex_api.dart' show loadCodexVersion;
 import 'models/featured_upstreams.dart';
 import 'models/magpie_follow.dart';
 import 'models/model_icons.dart';
@@ -180,6 +183,7 @@ Future<void> main(List<String> arguments) async {
   if (!kIsWeb) {
     AppEventWatch.start();
     FrameWatch.start();
+    KeyWatch.start();
     MarkdownEditor.onInputLost = (message) => appEvent('input', message);
   }
   // The Windows app's own logs and the macOS app's hang reports go beside
@@ -266,6 +270,11 @@ Future<void> main(List<String> arguments) async {
               (locale.locale ?? AppLocale.systemLocale()).languageCode == 'zh',
         );
   unawaited(bots?.start());
+  // What a key's and a frame's work grows with, for their slow lines.
+  FrameWatch.counts[workspace] = () =>
+      '${workspace.threads.length} agents, '
+      '${workspace.projects.length} projects, '
+      '${bots?.bots.length ?? 0} bots';
   final link = kIsWeb
       ? null
       : LinkHost(
@@ -563,6 +572,10 @@ void followSettingsFiles(SettingsFiles files) {
   ClaudeCore.current = () =>
       ClaudeCore.parse(files.settings[ClaudeCore.settingKey]);
   ClaudeCore.changes = files.settings;
+  CoreSystemPrompt.current = () => CoreSystemPrompt.parse(
+    files.settings[CoreSystemPrompt.modeKey],
+    files.settings[CoreSystemPrompt.textKey],
+  );
   // Settings → Models: the upstreams, kept in settings.json.
   ModelProviders.current = ModelProviders.settings(files.settings);
   // The upstream that follows magpie: its models got again as it starts,
@@ -600,6 +613,8 @@ void followSettingsFiles(SettingsFiles files) {
   // The logos of the sites listed, for their upstreams' icons, as kept
   // last time (Settings → Models gets the list again).
   unawaited(FeaturedUpstream.readKept());
+  // The Codex CLI's version ChatGPT accounts' requests go as.
+  unawaited(loadCodexVersion());
   // Settings → Appearance: how wide the conversation grows.
   ChatWidth.follow(files.settings, () => files.settings[ChatWidth.settingKey]);
   // Settings → Appearance: how the user's messages show.
@@ -841,9 +856,8 @@ class BaoCodeApp extends StatefulWidget {
   final TerminalBackend? terminalBackend;
 
   /// Whether each window's app has no semantics (see
-  /// _BaoCodeAppState._withoutSemantics): on Windows itself, unless a test
-  /// says. Tests that target Windows from another host keep theirs, to find
-  /// widgets by.
+  /// _BaoCodeAppState._withoutSemantics): on Windows itself and in the
+  /// macOS app, unless a test says. Tests keep theirs, to find widgets by.
   @visibleForTesting
   static bool? debugWithoutSemantics;
 
@@ -904,6 +918,7 @@ class _BaoCodeAppState extends State<BaoCodeApp>
       }
       await Future.wait([
         stopClaudeProcesses(),
+        AgyRuntime.local.stopAll(),
         RemoteClaudeTransport.stopAll(),
         stopModelProxy(),
         stopLspProcesses(),
@@ -1134,17 +1149,22 @@ class _BaoCodeAppState extends State<BaoCodeApp>
     ),
   );
 
-  /// [app] with no semantics on Windows: only a screen reader would read
-  /// them, and the app makes no claim to work with one. Windows' engine
-  /// turns them on at another app's first question for the view's
+  /// [app] with no semantics on Windows and macOS: only a screen reader
+  /// would read them, and the app makes no claim to work with one. Windows'
+  /// engine turns them on at another app's first question for the view's
   /// accessibility (input methods and translators ask too, before the view
   /// answers them itself, see view_window.cpp), and its bridge then
   /// crashes on the tree as the app's changes move it: on a node with no
   /// parent in CreateRemoveReparentedNodesUpdate (at every start on 1.9.4,
-  /// on some machines), or in HitTestSync. With nothing under the root
-  /// there is nothing to move, and no tree to keep up each frame.
+  /// on some machines), or in HitTestSync. macOS' engine shares that
+  /// bridge, made anew each time another app (a window manager, a
+  /// translator) turns accessibility on, and crashes there as well (2.0.2,
+  /// twice within a second of semantics on: flutter#175041). With nothing
+  /// under the root there is nothing to move, and no tree to keep up each
+  /// frame.
   static Widget _withoutSemantics(Widget app) =>
-      (BaoCodeApp.debugWithoutSemantics ?? AppPlatform.isWindowsHost)
+      (BaoCodeApp.debugWithoutSemantics ??
+          (AppPlatform.isWindowsHost || AppPlatform.isMacOSApp))
       ? ExcludeSemantics(child: app)
       : app;
 }

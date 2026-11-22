@@ -11,6 +11,7 @@ import '../chat_models.dart';
 import 'markdown_view.dart';
 import 'step_header.dart';
 import 'thinking_spark.dart';
+import '../selection/chat_selection.dart';
 
 /// What the agent is busy with out of sight, after Claude's spark: typed
 /// out, then dots counting up behind it ("Compacting conversation..").
@@ -125,7 +126,7 @@ class ActivityRow extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            SelectionContainer.disabled(
+            ChatUnselectable(
               child: switch (brand) {
                 'gemini' => Image.asset(
                   _geminiColorLogo,

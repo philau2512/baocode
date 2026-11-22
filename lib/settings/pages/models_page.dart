@@ -17,7 +17,6 @@ import '../../kernel/claude_code/claude_haiku.dart';
 import '../../l10n/l10n.dart';
 import '../../models/claude_resets.dart';
 import '../../models/claude_resets_io.dart';
-import '../../models/codex/codex_api.dart' show codexClientVersion;
 import '../../models/codex/codex_quota_format.dart';
 import '../../models/codex/codex_service.dart';
 import '../../models/codex/codex_usage.dart';
@@ -133,6 +132,7 @@ class ModelsSettingsPage extends StatefulWidget {
       ProviderProtocol.openaiChat => 'OpenAI Chat Completions',
       ProviderProtocol.openaiResponses => 'OpenAI Responses',
       ProviderProtocol.codex => 'ChatGPT (Codex)',
+      ProviderProtocol.antigravity => 'Antigravity',
     };
   }
 
@@ -1143,12 +1143,18 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
   }
 
   /// Speaks [protocol] from now on: a new provider's name, left as it was
-  /// made, becomes ChatGPT's when it is that.
+  /// made, becomes ChatGPT's or Antigravity's when it is that.
   Future<void> _setProtocol(ProviderProtocol protocol) {
     var provider = _providerNow.copyWith(protocol: protocol);
-    if (protocol == ProviderProtocol.codex &&
-        provider.name == context.l10n.modelsNewProviderName) {
-      provider = provider.copyWith(name: 'ChatGPT');
+    if (provider.name == context.l10n.modelsNewProviderName) {
+      switch (protocol) {
+        case ProviderProtocol.codex:
+          provider = provider.copyWith(name: 'ChatGPT');
+        case ProviderProtocol.antigravity:
+          provider = provider.copyWith(name: 'Antigravity');
+        default:
+          break;
+      }
     }
     return _save(provider);
   }
@@ -1223,9 +1229,12 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
       AccountBalance.mostRemaining => l10n.modelsBalanceMostRemaining,
     };
     final balance = balanceName(provider.balance);
+    final antigravity = provider.protocol == ProviderProtocol.antigravity;
     return SettingsGroup(
       title: l10n.modelsAccounts,
-      description: l10n.modelsAccountsDescription,
+      description: antigravity
+          ? l10n.modelsAccountsDescriptionAntigravity
+          : l10n.modelsAccountsDescription,
       children: [
         if (provider.accounts.isEmpty)
           SettingsRow(label: l10n.modelsAccountsNone)
@@ -1279,13 +1288,17 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
               ],
             ),
           ),
-        if (provider.accounts.isNotEmpty) _autoResetCredits(context),
+        // Reset credits are ChatGPT's.
+        if (provider.accounts.isNotEmpty && !antigravity)
+          _autoResetCredits(context),
         SettingsRow(
           label: login != null
               ? l10n.modelsAccountSigningIn
               : l10n.modelsAddAccount,
           description: switch (login) {
             null => l10n.modelsAddAccountDescription,
+            CodexLogin(listening: false) when antigravity =>
+              l10n.modelsAccountPortBusyAntigravity,
             CodexLogin(listening: false) => l10n.modelsAccountPortBusy,
             _ => l10n.modelsAccountSigningInDetail,
           },
@@ -1337,7 +1350,8 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
             ],
           ),
         ),
-        if (WindowControls.canPickFiles)
+        // The files imported are ChatGPT's (Codex CLI's, CLIProxyAPI's).
+        if (WindowControls.canPickFiles && !antigravity)
           SettingsRow(
             label: l10n.modelsAccountsImportTitle,
             description: l10n.modelsAccountsImportDescription,
@@ -1477,6 +1491,7 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
             for (final value in ProviderProtocol.values)
               IdeMenuAction(
                 ModelsSettingsPage.protocolName(context, value),
+                enabled: value.selectable || value == provider.protocol,
                 checked: value == provider.protocol,
                 onSelected: () => unawaited(_setProtocol(value)),
               ),
@@ -1949,31 +1964,6 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
           value: provider.promptCacheKey,
           onChanged: (value) =>
               unawaited(_save(_providerNow.copyWith(promptCacheKey: value))),
-        ),
-      if (provider.protocol == ProviderProtocol.codex)
-        SettingsRow(
-          label: l10n.modelsCodexVersion,
-          description: l10n.modelsCodexVersionDescription,
-          trailing: _Field(
-            value: provider.clientVersion ?? '',
-            label: l10n.modelsCodexVersion,
-            placeholder: codexClientVersion,
-            onCommit: (text) {
-              final version = text.trim();
-              // Not one: left as it was.
-              if (version.isNotEmpty &&
-                  !ModelProvider.isClientVersion(version)) {
-                return;
-              }
-              unawaited(
-                _save(
-                  _providerNow.copyWith(
-                    clientVersion: () => version.isEmpty ? null : version,
-                  ),
-                ),
-              );
-            },
-          ),
         ),
       SettingsRow(
         label: l10n.modelsEnv,
@@ -2815,9 +2805,11 @@ class _QuotaLine extends StatelessWidget {
       child: Row(
         children: [
           SizedBox(
-            width: 52,
+            width: window.name == null ? 52 : 128,
             child: Text(
-              quotaWindowName(l10n, window.minutes),
+              quotaWindowLabel(l10n, window),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: SettingsText.description,
             ),
           ),

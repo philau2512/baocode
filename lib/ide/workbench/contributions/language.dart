@@ -168,6 +168,14 @@ class LanguageContribution extends WorkbenchRegistrations {
                 languages,
                 doc.path,
                 l10n: context.l10n,
+                onOpenServerMenu: (status, {anchor, position}) =>
+                    language.showServerMenu(
+                      context,
+                      status,
+                      path: doc.path,
+                      anchor: anchor,
+                      position: position,
+                    ),
               ),
               _ => const [],
             },

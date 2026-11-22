@@ -17,6 +17,7 @@ import 'hover_builder.dart';
 import 'pixel_loader.dart';
 import 'shimmer_text.dart';
 import '../../ide/ide_hover.dart';
+import '../selection/chat_selection.dart';
 
 /// A subagent as a card, a line: what it was given to do, then what it did
 /// last, flipping up to the next as it goes on, and once done to how it
@@ -110,12 +111,12 @@ class AgentStep extends StatefulWidget {
   }
 
   /// What follows its description: while it runs, what it did last; once
-  /// done, how it went. Null with nothing to say.
+  /// done, how it went, else what it was asked. Null with nothing to say.
   static String? trailing(AgentItem item, {AppLocalizations? l10n}) =>
       switch (item.status) {
         CommandStatus.running => latest(item, l10n: l10n),
         _ => switch (meta(item, l10n: l10n)) {
-          '' => null,
+          '' => _firstLine(item.prompt),
           final meta => meta,
         },
       };
@@ -495,7 +496,7 @@ class _Actions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SelectionContainer.disabled(
+    return ChatUnselectable(
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [

@@ -4,8 +4,11 @@ import 'dart:math' as math;
 import 'package:path/path.dart' as p;
 
 import '../../chat/chat_models.dart';
+import '../../chat/compaction_text.dart';
+import '../../l10n/l10n.dart';
 import '../kernel_event.dart';
 import '../kernel_types.dart';
+import '../line_diff.dart';
 import '../output_meter.dart';
 import 'claude_goal.dart';
 import 'claude_numbers.dart';
@@ -148,6 +151,11 @@ class ClaudeTranslator {
   /// task's): one continued (`SendMessage`) runs again on a call of its
   /// own, and goes on in the card of the first.
   final Map<String, String> _agentCalls = {};
+
+  /// The card of each skill run from a slash command in a subagent of its
+  /// own (`context: fork`), by the id its messages give as their parent
+  /// (`forked-command-<name>`): no call started it (see [_forkedSkill]).
+  final Map<String, String> _forkedCommands = {};
   final Set<String> _denied = {};
 
   /// Calls made and not answered yet: those of a stopped turn never are.
@@ -199,17 +207,26 @@ class ClaudeTranslator {
       'Your plan is now shown to the user, who will start it or say what '
       'should change in their next message. End your turn here without '
       'repeating the plan: do not start implementing it, and do not call '
-      'ExitPlanMode again.';
+      'ExitPlanMode again. Approval does not go through this tool: the user '
+      'starts the plan in the app, and their message then tells you plan '
+      'mode is over.';
 
   /// Marks the note sent with the message that starts a plan.
   static const _planStarted = 'The user has started your plan';
 
   /// The note sent with the message that starts the plan in [path]: not
-  /// shown, it tells the model planning is over.
+  /// shown, it tells the model planning is over. It says outright that the
+  /// plan-mode reminders earlier on no longer hold, and that ExitPlanMode
+  /// is not to be called: a model that took the read-only ones as standing
+  /// called it again and again for an approval it already had.
   static String planStartedNote(String path) =>
-      '<system-reminder>$_planStarted: plan mode is over. Carry out the '
-      '${path.isEmpty ? 'plan you put to them' : 'plan in $path'} now.'
-      '</system-reminder>';
+      '<system-reminder>$_planStarted: plan mode is over and the plan is '
+      'approved. The plan-mode instructions earlier in this conversation '
+      '(read-only, superseding other instructions) no longer apply: you may '
+      'edit files, run commands and use any tool. Do not call ExitPlanMode: '
+      'there is nothing left to approve, and it would only fail. Carry out '
+      'the ${path.isEmpty ? 'plan you put to them' : 'plan in $path'} now, '
+      'from its first step.</system-reminder>';
 
   /// Whether [text] says the plan is started (see [planStartedNote]).
   static bool startsPlan(String text) => text.contains(_planStarted);
@@ -358,7 +375,8 @@ class ClaudeTranslator {
     if (_extractCwd(message) case final cwd?) {
       _cwd = cwd;
     }
-    final parent = message['parent_tool_use_id'] as String?;
+    final given = message['parent_tool_use_id'] as String?;
+    final parent = _forkedCommands[given] ?? given;
     switch (message['type']) {
       case 'stream_event' when parent == null:
         _streamEvent(
@@ -1281,12 +1299,14 @@ class ClaudeTranslator {
       // Its verb the web kind's, in the app's language.
       'WebFetch' => ToolCallItem(
         kind: ToolKind.web,
+        tool: name,
         target: _string(input['url']) ?? '',
         status: status,
         output: output,
       ),
       'WebSearch' => ToolCallItem(
         kind: ToolKind.web,
+        tool: name,
         label: tense('Searched the web', 'Searching the web'),
         target: _string(input['query']) ?? '',
         status: status,
@@ -1459,6 +1479,24 @@ class ClaudeTranslator {
           model: agent.item.model == null
               ? _ownModelOf(_string(structured?['resolvedModel']))
               : null,
+        );
+        _putAgent(id);
+        return;
+      // A skill run in a subagent of its own: its card (a kept session's
+      // has none yet), with what the subagent answered.
+      case 'Skill'
+          when _agents.containsKey(id) || structured?['status'] == 'forked':
+        final agent = _agents[id] ??= _Agent(
+          AgentItem(
+            description: '/${_string(tool.input['skill']) ?? ''}',
+            id: id,
+          ),
+        );
+        agent.item = agent.item.copyWith(
+          status: outcome == _Outcome.done
+              ? CommandStatus.succeeded
+              : CommandStatus.failed,
+          result: _string(structured?['result']) ?? text,
         );
         _putAgent(id);
         return;
@@ -1643,10 +1681,7 @@ class ClaudeTranslator {
       // A notebook edit tells the cell's source before and after, not a
       // patch (the file is JSON): its lines, compared.
       String source(String key) => _string(result[key]) ?? '';
-      for (final line in _lineDiff(
-        source('old_source'),
-        source('new_source'),
-      )) {
+      for (final line in lineDiff(source('old_source'), source('new_source'))) {
         switch (line.type) {
           case DiffLineType.added:
             added++;
@@ -1739,48 +1774,6 @@ class ClaudeTranslator {
 
   static const _maxDiffLines = 400;
 
-  /// [before] to [after], line by line: kept lines as context, numbered as
-  /// in the text they are from. Past a size, all of one replaced by the
-  /// other.
-  static List<DiffLine> _lineDiff(String before, String after) {
-    List<String> split(String text) => text.isEmpty ? [] : text.split('\n');
-    final a = split(before);
-    final b = split(after);
-    // The longest common subsequence, from the end.
-    final common = a.length * b.length <= 250000
-        ? List.generate(a.length + 1, (_) => List.filled(b.length + 1, 0))
-        : null;
-    if (common != null) {
-      for (var i = a.length - 1; i >= 0; i--) {
-        for (var j = b.length - 1; j >= 0; j--) {
-          common[i][j] = a[i] == b[j]
-              ? common[i + 1][j + 1] + 1
-              : math.max(common[i + 1][j], common[i][j + 1]);
-        }
-      }
-    }
-    final lines = <DiffLine>[];
-    var i = 0;
-    var j = 0;
-    while (i < a.length || j < b.length) {
-      if (common != null && i < a.length && j < b.length && a[i] == b[j]) {
-        lines.add(DiffLine(DiffLineType.context, j + 1, b[j]));
-        i++;
-        j++;
-      } else if (i < a.length &&
-          (j == b.length ||
-              common == null ||
-              common[i + 1][j] >= common[i][j + 1])) {
-        lines.add(DiffLine(DiffLineType.removed, i + 1, a[i]));
-        i++;
-      } else {
-        lines.add(DiffLine(DiffLineType.added, j + 1, b[j]));
-        j++;
-      }
-    }
-    return lines;
-  }
-
   // --- Runtime messages ------------------------------------------------------------
 
   /// Whether the CLI's [content] is a notice not shown: the one on auto
@@ -1808,20 +1801,27 @@ class ClaudeTranslator {
         }
       case 'compact_boundary':
         if (_activity?.kind == KernelActivityKind.compacting) _report(null);
+        // As it came, else as the transcript keeps it.
         final meta = _map(message['compact_metadata']);
-        final before = claudeInt(meta['pre_tokens']);
-        final after = claudeInt(meta['post_tokens']);
+        final kept = _map(message['compactMetadata']);
+        final auto = (meta['trigger'] ?? kept['trigger']) == 'auto';
+        final note = CompactionNote(
+          auto: auto,
+          // Refused by the API before the window set was full.
+          tooLong:
+              auto && (meta['reason'] ?? kept['reason']) == 'prompt_too_long',
+          before: claudeInt(meta['pre_tokens']) ?? claudeInt(kept['preTokens']),
+          after: claudeInt(meta['post_tokens']),
+          window:
+              claudeInt(meta['context_window']) ??
+              claudeInt(kept['contextWindow']),
+        );
         _put(
           uuid,
           NoticeItem(
             NoticeKind.compaction,
-            [
-              meta['trigger'] == 'auto'
-                  ? 'Conversation compacted automatically'
-                  : 'Conversation compacted',
-              if (before != null)
-                '${_tokens(before)}${after == null ? '' : ' → ${_tokens(after)}'} tokens',
-            ].join(' · '),
+            note.describe(englishLocalizations),
+            compaction: note,
           ),
         );
       case 'api_retry' when !replaying:
@@ -1898,8 +1898,11 @@ class ClaudeTranslator {
         final workflow = message['task_type'] == 'local_workflow';
         final call = message['tool_use_id'] as String?;
         // A subagent's task is its card's, continued or not; a workflow's
-        // too.
-        final card = agent || workflow ? _agentCard(taskId, call) : null;
+        // too; a skill's run in a subagent of its own, a card of its own.
+        final card = agent || workflow
+            ? _agentCard(taskId, call) ??
+                  (agent ? _forkedSkill(taskId, call, message) : null)
+            : null;
         if (card != null) _agentCalls[taskId] = card;
         if (_agents[card] case final run? when workflow) {
           run.item = run.item.copyWith(
@@ -2002,6 +2005,41 @@ class ClaudeTranslator {
   /// by the call [toolUseId]; null when it runs none we know of.
   String? _agentCard(String? taskId, String? toolUseId) =>
       _agents.containsKey(toolUseId) ? toolUseId : _agentCalls[taskId];
+
+  /// A skill run in a subagent of its own (`context: fork`), as the task
+  /// [started] says: a subagent's card, the one of the Skill call [call]
+  /// that ran it, else (run from a slash command, `/code-review`) one of
+  /// its own, which its messages go in once it is done (the CLI gives
+  /// them only then). Null for a task that is no such skill's.
+  String? _forkedSkill(
+    String taskId,
+    String? call,
+    Map<String, Object?> started,
+  ) {
+    final skill = call == null ? null : _tools[call];
+    final description = _string(started['description']);
+    final String id;
+    if (call == null) {
+      if (description == null || !description.startsWith('/')) return null;
+      id = taskId;
+      _forkedCommands['forked-command-${description.substring(1)}'] = id;
+    } else if (skill?.name == 'Skill') {
+      id = call;
+    } else {
+      return null;
+    }
+    _agents[id] = _Agent(
+      AgentItem(
+        description: description ?? '/${_string(skill?.input['skill']) ?? ''}',
+        id: id,
+        agentType: _string(started['subagent_type']),
+        prompt: _string(started['prompt']),
+        startedAt: skill?.startedAt ?? DateTime.now(),
+      ),
+    );
+    _putAgent(id);
+    return id;
+  }
 
   /// The subagent [toolUseId] started, if one did, now runs on its own.
   void _agentToBackground(String? toolUseId) {
@@ -2450,9 +2488,6 @@ class ClaudeTranslator {
     'failed' || 'killed' || 'stopped' => CommandStatus.failed,
     _ => null,
   };
-
-  static String _tokens(int tokens) =>
-      tokens >= 1000 ? '${(tokens / 1000).toStringAsFixed(1)}k' : '$tokens';
 }
 
 enum _Outcome { running, done, failed, denied }

@@ -617,6 +617,7 @@ class ClaudeCodeKernel
       final workspace = _workspace;
       _launchedProvider = target.provider;
       _launchedModel = custom != null ? _model : null;
+      _modelRefused = false;
       _launchedWindow = _autocompact;
       _appliedSwitches = ExtensionSwitches.current();
       final sdkServers = ClaudeSdkTools.serversFor(_cwd);
@@ -637,6 +638,9 @@ class ClaudeCodeKernel
           switches: _appliedSwitches,
           attribution: CommitAttribution.current(),
           env: env,
+          // Antigravity's models on BaoCode's own core alone: the session's,
+          // or those its roles pick (a subagent's).
+          builtinCore: custom != null && _providers.builtinCoreOnly(custom.$1),
           directories: [...?workspace?.folders, ...?workspace?.reaches],
           folderInstructions: workspace?.folders.isNotEmpty ?? false,
           // Long pastes are kept on this machine: only its agent reads them.
@@ -652,6 +656,15 @@ class ClaudeCodeKernel
           models: switch (custom) {
             (final provider, _) => _requestedModels(provider),
             null => const [],
+          },
+          additionalModels: switch (custom) {
+            (final provider, _)
+                when isModelProxyUrl(
+                  env?[ClaudeModelVariables.baseUrl],
+                  provider.id,
+                ) =>
+              _providers.proxyModelRefs,
+            _ => const [],
           },
         ),
       );
@@ -886,12 +899,13 @@ class ClaudeCodeKernel
   /// on, resumed, on it. That even with tasks at work in the background
   /// (a server it started), which end with the process, or the CLI still
   /// saying it is at work past its turn: the user agreed to the restart,
-  /// and the message is not for the provider before.
+  /// and the message is not for the provider before. So too a model the
+  /// CLI refused ([_modelRefused]): the message is for the one picked.
   void _applyWindow() {
     if (!_running) return;
-    final otherProvider = _providerKey != _launchedProvider;
-    if (!otherProvider && _autocompact == _launchedWindow) return;
-    if (!otherProvider && _busy) return;
+    final otherModel = _providerKey != _launchedProvider || _modelRefused;
+    if (!otherModel && _autocompact == _launchedWindow) return;
+    if (!otherModel && _busy) return;
     _teardown();
     _translator.endTasks();
     _setHealth(KernelHealth.idle);
@@ -1717,16 +1731,7 @@ class ClaudeCodeKernel
       _control!.respond(requestId, {'behavior': 'deny', 'message': _notAsked});
       return;
     }
-    // Full access is approved here (see _cliApproval), but for what is
-    // asked all the same (see _askedInFullAccess): that too where no one
-    // is there to ask (a bot's, KernelWorkspace.approvesAll). In Plan it
-    // leaves to the classifier what the CLI cannot tell is read-only; with
-    // no classifier (another provider's model), that is approved here
-    // too, as it would be by the classifier.
-    if (_approval == 'bypassPermissions' &&
-        (_work != 'plan' || !_classifies) &&
-        tool != 'AskUserQuestion' &&
-        ((_workspace?.approvesAll ?? false) || !_askedInFullAccess(request))) {
+    if (_fullAccessAllows(request)) {
       _control!.respond(requestId, {
         'behavior': 'allow',
         'updatedInput': input,
@@ -1774,8 +1779,50 @@ class ClaudeCodeKernel
           alwaysAllowLabel: _describeRules(suggestions),
         );
     }
-    _permissions[requestId] = _Permission(input, suggestions, questions);
+    _permissions[requestId] = _Permission(
+      input,
+      suggestions,
+      questions,
+      request: request,
+    );
     emit(InteractionRequested(nextSeq, interaction));
+  }
+
+  /// Whether full access approves this request of the CLI's here (see
+  /// _cliApproval): all but what is asked all the same (see
+  /// _askedInFullAccess), and that too where no one is there to ask (a
+  /// bot's, KernelWorkspace.approvesAll). A question is the user's in any
+  /// mode, and so is what the classifier held back in Plan: what it never
+  /// weighed (auto mode not there for the account, say, though the model
+  /// has it) is approved, as it would be with no classifier.
+  bool _fullAccessAllows(Map<String, Object?> request) =>
+      _approval == 'bypassPermissions' &&
+      request['tool_name'] != 'AskUserQuestion' &&
+      request['decision_reason_type'] != 'classifier' &&
+      ((_workspace?.approvesAll ?? false) || !_askedInFullAccess(request));
+
+  /// Answers what is waiting on the user that the approvals now picked
+  /// approve: switched to full access with a card up, it goes, as it would
+  /// not have come.
+  void _approveWaiting() {
+    if (_approval != 'bypassPermissions') return;
+    for (final MapEntry(key: id, value: permission) in [
+      ..._permissions.entries,
+    ]) {
+      if (permission.sdk case final sdk?) {
+        _permissions.remove(id);
+        emit(InteractionResolved(nextSeq, id));
+        if (!sdk.isCompleted) sdk.complete(ApprovalDecision.allowOnce);
+      } else if (permission.request case final request?
+          when _fullAccessAllows(request)) {
+        _permissions.remove(id);
+        emit(InteractionResolved(nextSeq, id));
+        _control?.respond(id, {
+          'behavior': 'allow',
+          'updatedInput': permission.input,
+        });
+      }
+    }
   }
 
   static String _approvalTitle(String tool, Map<String, Object?> request) {
@@ -3197,8 +3244,17 @@ class ClaudeCodeKernel
       for (final (subtype, fields) in requests) {
         try {
           await control.request(subtype, fields);
+          if (subtype == 'set_model' && identical(control, _control)) {
+            _modelRefused = false;
+          }
         } on Object {
-          // Refused: what is in effect, asked for next, says so.
+          // Refused: what is in effect, asked for next, says so. A model
+          // refused (not in the `availableModels` it started with, or its
+          // check request failed) stays the one before: the next message
+          // starts it again on the one picked (see _applyWindow).
+          if (subtype == 'set_model' && identical(control, _control)) {
+            _modelRefused = true;
+          }
         }
       }
       if (!identical(control, _control)) return;
@@ -3208,6 +3264,10 @@ class ClaudeCodeKernel
   }
 
   Future<void> _changes = Future.value();
+
+  /// The CLI refused the model last picked (`set_model`): it is on the one
+  /// before until started again.
+  bool _modelRefused = false;
 
   /// Asks the CLI for the model and effort in effect.
   void _refreshApplied() {
@@ -3747,6 +3807,7 @@ class ClaudeCodeKernel
   /// Tells a running CLI what is picked now.
   void _applyMode() {
     _applyPlanReview();
+    _approveWaiting();
     emitInfoChanged();
     final mode = _mode;
     if (!_running || mode == _cliMode) return;
@@ -3952,7 +4013,12 @@ class _Permission {
     this.questions, {
     this.elicitation,
     this.sdk,
+    this.request,
   });
+
+  /// For the CLI's can_use_tool: the request as it came, to answer it
+  /// here should full access be picked while it waits.
+  final Map<String, Object?>? request;
 
   /// For one of the app's own tools asking (ClaudeSdkCall.ask): answered
   /// here, not to the CLI.

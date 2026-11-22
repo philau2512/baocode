@@ -39,6 +39,32 @@
       "hosts": [
         "www.useccmax.com"
       ]
+    },
+    {
+      "id": "novalink",
+      "name": "NovaLink",
+      "url": "https://newapi.it120.cloud",
+      "logo": "novalink.png",
+      "description": {
+        "en": "GPT, Claude and Gemini, one key. Track usage.",
+        "zh": "GPT、Claude、Gemini 统一接入，清晰管理用量"
+      },
+      "hosts": [
+        "newapi.it120.cloud"
+      ]
+    },
+    {
+      "id": "mxouai",
+      "name": "1元中转",
+      "url": "https://www.mxouai.com/register?aff=KQLSHNQ6RVTC",
+      "logo": "mxouai.png",
+      "description": {
+        "en": "First sponsor of Cursor BYOK",
+        "zh": "Cursor BYOK 的首位赞助商"
+      },
+      "hosts": [
+        "www.mxouai.com"
+      ]
     }
   ]
 }

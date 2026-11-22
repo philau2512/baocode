@@ -2750,6 +2750,12 @@ abstract class AppLocalizations {
   /// **'No matching results'**
   String get quickOpenNoMatchingResults;
 
+  /// No description provided for @quickOpenTooManyFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'Only the first {count} files are searched: this project has more'**
+  String quickOpenTooManyFiles(int count);
+
   /// Command palette group label.
   ///
   /// In en, this message translates to:
@@ -3011,13 +3017,13 @@ abstract class AppLocalizations {
   /// A coordinating step's verb once done, by the session tool it called; the conversation's title follows.
   ///
   /// In en, this message translates to:
-  /// **'{action, select, new{Started} send{Handed work to} wait{Waited for} read{Read} stop{Stopped} changes{Checked the changes of} list{Listed the conversations} other{Coordinated}}'**
+  /// **'{action, select, new{Started} send{Handed work to} wait{Waited for} read{Read} stop{Stopped} changes{Checked the changes of} list{Listed the conversations} models{Checked the models} other{Coordinated}}'**
   String sessionStepDone(String action);
 
   /// A coordinating step's verb while it runs (see sessionStepDone).
   ///
   /// In en, this message translates to:
-  /// **'{action, select, new{Starting} send{Handing work to} wait{Waiting for} read{Reading} stop{Stopping} changes{Checking the changes of} list{Listing the conversations} other{Coordinating}}'**
+  /// **'{action, select, new{Starting} send{Handing work to} wait{Waiting for} read{Reading} stop{Stopping} changes{Checking the changes of} list{Listing the conversations} models{Checking the models} other{Coordinating}}'**
   String sessionStepRunning(String action);
 
   /// No description provided for @sessionOpen.
@@ -4730,6 +4736,12 @@ abstract class AppLocalizations {
   /// **'Copy reply'**
   String get turnCopy;
 
+  /// Hint of the button at the end of a finished turn that copies the conversation up to there into a new one.
+  ///
+  /// In en, this message translates to:
+  /// **'Fork from here'**
+  String get turnFork;
+
   /// No description provided for @turnCopied.
   ///
   /// In en, this message translates to:
@@ -4915,6 +4927,42 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Compacting conversation'**
   String get activityCompacting;
+
+  /// No description provided for @noticeCompacted.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversation compacted'**
+  String get noticeCompacted;
+
+  /// No description provided for @noticeCompactedAuto.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversation compacted automatically'**
+  String get noticeCompactedAuto;
+
+  /// The divider of a compaction forced by the API refusing the request as longer than the model's context, before the context set was full.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversation compacted early: the provider refused it as too long for the model'**
+  String get noticeCompactedTooLong;
+
+  /// No description provided for @noticeCompactedTooLongWindow.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversation compacted early: the provider refused it as too long for the model, which takes less than the {window} context set'**
+  String noticeCompactedTooLongWindow(String window);
+
+  /// No description provided for @noticeCompactedTokens.
+  ///
+  /// In en, this message translates to:
+  /// **'{tokens} tokens'**
+  String noticeCompactedTokens(String tokens);
+
+  /// No description provided for @noticeCompactedFromTo.
+  ///
+  /// In en, this message translates to:
+  /// **'{before} → {after} tokens'**
+  String noticeCompactedFromTo(String before, String after);
 
   /// No description provided for @activityPlanning.
   ///
@@ -8013,6 +8061,60 @@ abstract class AppLocalizations {
   /// **'{id} is running'**
   String langRunning(String id);
 
+  /// No description provided for @langError.
+  ///
+  /// In en, this message translates to:
+  /// **'{id} reported an error'**
+  String langError(String id);
+
+  /// No description provided for @langWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'{id} reported a warning'**
+  String langWarning(String id);
+
+  /// No description provided for @langClickForDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'Click for log and settings'**
+  String get langClickForDetails;
+
+  /// No description provided for @langViewLog.
+  ///
+  /// In en, this message translates to:
+  /// **'View Log'**
+  String get langViewLog;
+
+  /// No description provided for @langOpenLspSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Open LSP Settings'**
+  String get langOpenLspSettings;
+
+  /// No description provided for @langServerLogLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'LSP Log'**
+  String get langServerLogLabel;
+
+  /// No description provided for @langNoLogOutput.
+  ///
+  /// In en, this message translates to:
+  /// **'No log output from {id} yet.'**
+  String langNoLogOutput(String id);
+
+  /// No description provided for @langServerInitializing.
+  ///
+  /// In en, this message translates to:
+  /// **'{id} is still initializing (click the status bar for details)'**
+  String langServerInitializing(String id);
+
+  /// No description provided for @langServerImportError.
+  ///
+  /// In en, this message translates to:
+  /// **'{id} failed to load the project (click the status bar for details)'**
+  String langServerImportError(String id);
+
   /// No description provided for @langRestarting.
   ///
   /// In en, this message translates to:
@@ -10905,6 +11007,12 @@ abstract class AppLocalizations {
   /// **'Sign in with ChatGPT to use Codex models on your plan\'s quota. With several accounts, requests are spread across them by the load balancing below, and one out of quota gives way to the next.'**
   String get modelsAccountsDescription;
 
+  /// No description provided for @modelsAccountsDescriptionAntigravity.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in with Google to use Antigravity\'s models (Gemini, Claude) on your plan\'s quota, always on BaoCode\'s own core. Each group of models has a quota of its own: an account out of one gives way to the next for those models alone. Google may suspend an account it sees used outside Antigravity: use one you can afford to lose.'**
+  String get modelsAccountsDescriptionAntigravity;
+
   /// No description provided for @modelsAccountsNone.
   ///
   /// In en, this message translates to:
@@ -11246,6 +11354,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Port 1455, which sign-in comes back to, is used by another program (a proxy in Docker, or the Codex CLI signing in). Sign in in the browser all the same: the page it ends on will fail to load or show something else. Copy that page\'s full address and paste it below.'**
   String get modelsAccountPortBusy;
+
+  /// No description provided for @modelsAccountPortBusyAntigravity.
+  ///
+  /// In en, this message translates to:
+  /// **'Port 51121, which sign-in comes back to, is used by another program (Antigravity itself, or a proxy signing in). Sign in in the browser all the same: the page it ends on will fail to load or show something else. Copy that page\'s full address and paste it below.'**
+  String get modelsAccountPortBusyAntigravity;
 
   /// No description provided for @modelsAccountCallback.
   ///
@@ -11721,18 +11835,6 @@ abstract class AppLocalizations {
   /// **'Sends each conversation\'s own prompt_cache_key, so the upstream (or a relay in front of several) routes its requests to where the earlier ones are cached. Turn off for an upstream that rejects the field.'**
   String get modelsPromptCacheKeyDescription;
 
-  /// No description provided for @modelsCodexVersion.
-  ///
-  /// In en, this message translates to:
-  /// **'Codex Version'**
-  String get modelsCodexVersion;
-
-  /// No description provided for @modelsCodexVersionDescription.
-  ///
-  /// In en, this message translates to:
-  /// **'The Codex CLI version requests are made as. The backend only lists models that version supports, so if new models are missing, enter a newer version and refresh the model list. Leave empty to use the app\'s default.'**
-  String get modelsCodexVersionDescription;
-
   /// No description provided for @modelsEnv.
   ///
   /// In en, this message translates to:
@@ -12086,24 +12188,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Manage Models…'**
   String get modelsManage;
-
-  /// No description provided for @modelsSwitchTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Switch to {name}?'**
-  String modelsSwitchTitle(String name);
-
-  /// No description provided for @modelsSwitchDetail.
-  ///
-  /// In en, this message translates to:
-  /// **'Claude Code restarts on the other upstream and resumes this conversation (--resume). Its history is sent to the new model as it is; some upstreams take it slower the first time. A reply still running stops when you send the next message.'**
-  String get modelsSwitchDetail;
-
-  /// No description provided for @modelsSwitchConfirm.
-  ///
-  /// In en, this message translates to:
-  /// **'Switch'**
-  String get modelsSwitchConfirm;
 
   /// No description provided for @modelsFallbackHint.
   ///
@@ -12816,7 +12900,7 @@ abstract class AppLocalizations {
   /// No description provided for @appearanceSettingsMinimapDescription.
   ///
   /// In en, this message translates to:
-  /// **'A minimap of the whole conversation at the left of its column, where you are in it shown as you scroll; click or drag it to get somewhere. It stands in for the scrollbar, and is not shown in a window too narrow for it. Off: the scrollbar.'**
+  /// **'A minimap of the whole conversation beside its column, where you are in it shown as you scroll; click or drag it to get somewhere. It stands in for the scrollbar, and is not shown in a window too narrow for it. Off: the scrollbar.'**
   String get appearanceSettingsMinimapDescription;
 
   /// No description provided for @appearanceSettingsWindowBlur.
@@ -12902,6 +12986,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Bouncy'**
   String get minimapElasticityBouncy;
+
+  /// No description provided for @appearanceSettingsMinimapSide.
+  ///
+  /// In en, this message translates to:
+  /// **'Minimap Position'**
+  String get appearanceSettingsMinimapSide;
+
+  /// No description provided for @appearanceSettingsMinimapSideDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Which side of the conversation\'s column the minimap is on. At the right it takes the scrollbar\'s place, below the side panel\'s buttons.'**
+  String get appearanceSettingsMinimapSideDescription;
+
+  /// No description provided for @appearanceSettingsMinimapSideLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Minimap position: {side}'**
+  String appearanceSettingsMinimapSideLabel(String side);
+
+  /// No description provided for @minimapSideLeft.
+  ///
+  /// In en, this message translates to:
+  /// **'Left'**
+  String get minimapSideLeft;
+
+  /// No description provided for @minimapSideRight.
+  ///
+  /// In en, this message translates to:
+  /// **'Right'**
+  String get minimapSideRight;
 
   /// No description provided for @appearanceSettingsCodeFont.
   ///
@@ -13161,6 +13275,12 @@ abstract class AppLocalizations {
   /// **'Could not connect to {host}'**
   String remoteConnectFailed(String host);
 
+  /// No description provided for @remoteConnectionLost.
+  ///
+  /// In en, this message translates to:
+  /// **'The connection to {host} is lost, and being tried again by itself. What you send waits until it is back'**
+  String remoteConnectionLost(String host);
+
   /// No description provided for @remoteRetry.
   ///
   /// In en, this message translates to:
@@ -13256,6 +13376,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{kind}: {host} (disconnected)'**
   String remoteStatusFailed(String kind, String host);
+
+  /// No description provided for @remoteStatusDown.
+  ///
+  /// In en, this message translates to:
+  /// **'{kind}: {host} (disconnected, retrying...)'**
+  String remoteStatusDown(String kind, String host);
 
   /// No description provided for @remoteStatusInstalling.
   ///
@@ -14481,6 +14607,12 @@ abstract class AppLocalizations {
   /// **'Disconnected'**
   String get sidebarHostDisconnected;
 
+  /// No description provided for @sidebarHostDown.
+  ///
+  /// In en, this message translates to:
+  /// **'Disconnected, retrying...'**
+  String get sidebarHostDown;
+
   /// No description provided for @sidebarHostIdle.
   ///
   /// In en, this message translates to:
@@ -14847,12 +14979,6 @@ abstract class AppLocalizations {
   /// **'Not a relay address; one looks like https://relay.example.com'**
   String get mobileRelayInvalid;
 
-  /// No description provided for @mobileRelayPinned.
-  ///
-  /// In en, this message translates to:
-  /// **'Relay Used'**
-  String get mobileRelayPinned;
-
   /// No description provided for @mobileRelayCustom.
   ///
   /// In en, this message translates to:
@@ -14870,6 +14996,42 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'The address of a relay you run yourself (baocode-relay).'**
   String get mobileRelayCustomDescription;
+
+  /// No description provided for @mobileRelayInUse.
+  ///
+  /// In en, this message translates to:
+  /// **'In use'**
+  String get mobileRelayInUse;
+
+  /// No description provided for @mobileRelayMoveUp.
+  ///
+  /// In en, this message translates to:
+  /// **'Move Up'**
+  String get mobileRelayMoveUp;
+
+  /// No description provided for @mobileRelayMoveDown.
+  ///
+  /// In en, this message translates to:
+  /// **'Move Down'**
+  String get mobileRelayMoveDown;
+
+  /// No description provided for @mobileRelayRemove.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove'**
+  String get mobileRelayRemove;
+
+  /// No description provided for @mobileRelayAdd.
+  ///
+  /// In en, this message translates to:
+  /// **'Add Relay'**
+  String get mobileRelayAdd;
+
+  /// No description provided for @mobileRelayAddPick.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose…'**
+  String get mobileRelayAddPick;
 
   /// No description provided for @mobileRelayMode.
   ///
@@ -14892,13 +15054,13 @@ abstract class AppLocalizations {
   /// No description provided for @mobileRelayModePinned.
   ///
   /// In en, this message translates to:
-  /// **'Pick One'**
+  /// **'Your List'**
   String get mobileRelayModePinned;
 
   /// No description provided for @mobileRelayModePinnedDescription.
   ///
   /// In en, this message translates to:
-  /// **'Only the one picked: one of BaoCode\'s, or a custom address.'**
+  /// **'The relays you list, in order: the next when one cannot be reached, and back to an earlier one once it can. BaoCode\'s, or custom addresses.'**
   String get mobileRelayModePinnedDescription;
 
   /// No description provided for @mobileRelayModeDirect.
@@ -14996,6 +15158,144 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Stash'**
   String get settingsSectionStash;
+
+  /// No description provided for @settingsSectionBuiltinCore.
+  ///
+  /// In en, this message translates to:
+  /// **'Built-in Core'**
+  String get settingsSectionBuiltinCore;
+
+  /// No description provided for @settingsBuiltinCoreKeywords.
+  ///
+  /// In en, this message translates to:
+  /// **'builtin core system prompt instructions agent'**
+  String get settingsBuiltinCoreKeywords;
+
+  /// No description provided for @builtinCoreSettingsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Built-in Core'**
+  String get builtinCoreSettingsTitle;
+
+  /// No description provided for @builtinCoreSettingsDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Customize the system prompt used by BaoCode\'s built-in core. Changes apply to new conversations; bots keep their own prompts.'**
+  String get builtinCoreSettingsDescription;
+
+  /// No description provided for @builtinCoreSystemPromptGroup.
+  ///
+  /// In en, this message translates to:
+  /// **'System Prompt'**
+  String get builtinCoreSystemPromptGroup;
+
+  /// No description provided for @builtinCoreSystemPromptMode.
+  ///
+  /// In en, this message translates to:
+  /// **'Mode'**
+  String get builtinCoreSystemPromptMode;
+
+  /// No description provided for @builtinCoreSystemPromptModeLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'System Prompt: {mode}'**
+  String builtinCoreSystemPromptModeLabel(String mode);
+
+  /// No description provided for @builtinCoreModeDefault.
+  ///
+  /// In en, this message translates to:
+  /// **'Default'**
+  String get builtinCoreModeDefault;
+
+  /// No description provided for @builtinCoreModeAppend.
+  ///
+  /// In en, this message translates to:
+  /// **'Append to Default'**
+  String get builtinCoreModeAppend;
+
+  /// No description provided for @builtinCoreModeReplace.
+  ///
+  /// In en, this message translates to:
+  /// **'Replace Default'**
+  String get builtinCoreModeReplace;
+
+  /// No description provided for @builtinCoreModeDefaultDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'Uses BaoCode\'s default core instructions.'**
+  String get builtinCoreModeDefaultDetail;
+
+  /// No description provided for @builtinCoreModeAppendDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'Keeps the default core instructions and appends your text at the end.'**
+  String get builtinCoreModeAppendDetail;
+
+  /// No description provided for @builtinCoreModeReplaceDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'Replaces the default core instructions while keeping auto memory, output style, CLAUDE.md, and formatting rules.'**
+  String get builtinCoreModeReplaceDetail;
+
+  /// No description provided for @builtinCoreAppendLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Appended Instructions'**
+  String get builtinCoreAppendLabel;
+
+  /// No description provided for @builtinCoreAppendPlaceholder.
+  ///
+  /// In en, this message translates to:
+  /// **'Write instructions to append to the default system prompt…'**
+  String get builtinCoreAppendPlaceholder;
+
+  /// No description provided for @builtinCoreReplaceLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom Core Instructions'**
+  String get builtinCoreReplaceLabel;
+
+  /// No description provided for @builtinCoreReplacePlaceholder.
+  ///
+  /// In en, this message translates to:
+  /// **'Write the system prompt that replaces the default core instructions…'**
+  String get builtinCoreReplacePlaceholder;
+
+  /// No description provided for @builtinCoreLoadDefault.
+  ///
+  /// In en, this message translates to:
+  /// **'Load Default'**
+  String get builtinCoreLoadDefault;
+
+  /// No description provided for @builtinCoreResetDefault.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset to Default'**
+  String get builtinCoreResetDefault;
+
+  /// No description provided for @builtinCoreDefaultPromptTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Default System Prompt'**
+  String get builtinCoreDefaultPromptTitle;
+
+  /// No description provided for @builtinCoreDefaultPromptDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'The built-in core instructions used when no replacement is set, for reference.'**
+  String get builtinCoreDefaultPromptDescription;
+
+  /// No description provided for @builtinCoreCopyDefault.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy'**
+  String get builtinCoreCopyDefault;
+
+  /// No description provided for @builtinCoreCopiedDefault.
+  ///
+  /// In en, this message translates to:
+  /// **'Copied'**
+  String get builtinCoreCopiedDefault;
 
   /// No description provided for @settingsSectionCustomize.
   ///
@@ -23262,6 +23562,84 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'“{name}” already exists. Replace it?'**
   String remoteBrowserReplace(String name);
+
+  /// No description provided for @composerApprovalAgyAutoDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'Approve edits and safe commands, ask before irreversible ones'**
+  String get composerApprovalAgyAutoDetail;
+
+  /// No description provided for @kernelSetupInstall.
+  ///
+  /// In en, this message translates to:
+  /// **'{kernel} isn\'t installed on this computer'**
+  String kernelSetupInstall(String kernel);
+
+  /// No description provided for @kernelSetupInstallAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Install'**
+  String get kernelSetupInstallAction;
+
+  /// No description provided for @kernelSetupInstalling.
+  ///
+  /// In en, this message translates to:
+  /// **'Installing {kernel}… {percent}%'**
+  String kernelSetupInstalling(String kernel, int percent);
+
+  /// No description provided for @kernelSetupLogin.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in to {kernel} to use it'**
+  String kernelSetupLogin(String kernel);
+
+  /// No description provided for @kernelSetupLoginAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in'**
+  String get kernelSetupLoginAction;
+
+  /// No description provided for @kernelSetupLoginOpening.
+  ///
+  /// In en, this message translates to:
+  /// **'Opening the sign-in page…'**
+  String get kernelSetupLoginOpening;
+
+  /// No description provided for @kernelSetupLoginCode.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in on the page that opened, then paste the code it shows here.'**
+  String get kernelSetupLoginCode;
+
+  /// No description provided for @kernelSetupCodeHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Authorization code'**
+  String get kernelSetupCodeHint;
+
+  /// No description provided for @kernelSetupSubmit.
+  ///
+  /// In en, this message translates to:
+  /// **'Submit'**
+  String get kernelSetupSubmit;
+
+  /// No description provided for @kernelSetupOpenPage.
+  ///
+  /// In en, this message translates to:
+  /// **'Open page'**
+  String get kernelSetupOpenPage;
+
+  /// No description provided for @kernelSetupCancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get kernelSetupCancel;
+
+  /// No description provided for @kernelSetupLocalOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'{kernel} works only in projects on this computer'**
+  String kernelSetupLocalOnly(String kernel);
 }
 
 class _AppLocalizationsDelegate
