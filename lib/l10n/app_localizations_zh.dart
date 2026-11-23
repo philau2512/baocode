@@ -6717,6 +6717,61 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get agyCli => 'Antigravity CLI';
+
+  @override
+  String get agyCliDescription =>
+      'Google 官方的 Antigravity CLI，由 BaoCode 安装并保持最新。它的对话和终端里的 agy 分开存放。';
+
+  @override
+  String agyVersion(String version) {
+    return '版本 $version';
+  }
+
+  @override
+  String get agyNotInstalled => '未安装';
+
+  @override
+  String agyUpdateAvailable(String version) {
+    return '有新版本 $version';
+  }
+
+  @override
+  String get agyInstall => '安装';
+
+  @override
+  String get agyUpdate => '更新';
+
+  @override
+  String agyInstalling(int percent) {
+    return '正在安装… $percent%';
+  }
+
+  @override
+  String get agyAccount => 'Google 账号';
+
+  @override
+  String get agyAccountDescription =>
+      '登录会打开浏览器。登录状态和终端里的 agy 共用：退出登录时终端那边也会退出。';
+
+  @override
+  String get agySignIn => '登录';
+
+  @override
+  String get agySignOut => '退出登录';
+
+  @override
+  String get agySigningIn => '等待浏览器完成登录…';
+
+  @override
+  String agySignedIn(int count) {
+    return '已登录：$count 个模型';
+  }
+
+  @override
+  String get agyNotSignedIn => '未登录';
+
+  @override
   String get modelsTest => '测试连接';
 
   @override
@@ -13744,52 +13799,5 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String remoteBrowserReplace(String name) {
     return '“$name”已存在，要替换它吗？';
-  }
-
-  @override
-  String get composerApprovalAgyAutoDetail => '编辑和安全的命令自动通过，不可撤销的先问';
-
-  @override
-  String kernelSetupInstall(String kernel) {
-    return '这台电脑上还没装 $kernel';
-  }
-
-  @override
-  String get kernelSetupInstallAction => '安装';
-
-  @override
-  String kernelSetupInstalling(String kernel, int percent) {
-    return '正在安装 $kernel…$percent%';
-  }
-
-  @override
-  String kernelSetupLogin(String kernel) {
-    return '登录 $kernel 后才能使用';
-  }
-
-  @override
-  String get kernelSetupLoginAction => '登录';
-
-  @override
-  String get kernelSetupLoginOpening => '正在打开登录页…';
-
-  @override
-  String get kernelSetupLoginCode => '在打开的页面里登录，然后把页面上显示的授权码粘贴到这里。';
-
-  @override
-  String get kernelSetupCodeHint => '授权码';
-
-  @override
-  String get kernelSetupSubmit => '提交';
-
-  @override
-  String get kernelSetupOpenPage => '打开页面';
-
-  @override
-  String get kernelSetupCancel => '取消';
-
-  @override
-  String kernelSetupLocalOnly(String kernel) {
-    return '$kernel 仅支持本机项目';
   }
 }

@@ -1,7 +1,4 @@
 import '../acp/acp_connection.dart';
-import '../acp/mcp_endpoint.dart';
-import '../agent_kernel.dart' show SessionRecord;
-import '../kernel_types.dart' show RateLimitWindow;
 import 'agy_runtime.dart';
 
 /// No processes here (the web): agy never runs.
@@ -15,7 +12,14 @@ class _NoAgy implements AgyRuntime {
   );
 
   @override
-  Future<String?> locate() async => null;
+  Future<String?> version() async => null;
+
+  @override
+  Future<String> latestVersion() => Future.error(_unavailable);
+
+  @override
+  Future<void> install({void Function(double progress)? onProgress}) =>
+      Future.error(_unavailable);
 
   @override
   Future<AcpTransport> start(String cwd) => Future.error(_unavailable);
@@ -24,75 +28,17 @@ class _NoAgy implements AgyRuntime {
   void warm() {}
 
   @override
-  Future<Map<String, Object?>> replay(
-    String sessionId,
-    String cwd,
-    void Function(Map<String, Object?> update) onUpdate,
-  ) => Future.error(_unavailable);
+  Future<List<AgyModel>> models() => Future.error(_unavailable);
 
   @override
-  Future<void> install({void Function(double progress)? onProgress}) =>
-      Future.error(_unavailable);
+  Future<void> signIn() => Future.error(_unavailable);
 
   @override
-  Future<void> login({
-    required void Function(Uri link) link,
-    required Future<String?> Function() code,
-  }) => Future.error(_unavailable);
+  Future<void> signOut() => Future.error(_unavailable);
 
   @override
-  Future<List<AgyMcpServer>> mcpServers() async => const [];
-
-  @override
-  Future<void> setMcpServerEnabled(String name, bool enabled) async {}
-
-  @override
-  Future<AgyCredentials?> credentials() async => null;
-
-  @override
-  Future<List<RateLimitWindow>?> quota() async => null;
+  Future<void> deleteSession(String sessionId) async {}
 
   @override
   Future<void> stopAll() async {}
-
-  @override
-  AgyRecords records(String sessionId) => const _NoRecords();
-
-  @override
-  Future<McpEndpoint> serveTools(McpHandler handle) =>
-      Future.error(_unavailable);
-
-  @override
-  Future<List<SessionRecord>> sessions() async => const [];
-
-  @override
-  List<SessionRecord>? get lastSessions => null;
-
-  @override
-  Future<void> delete(String sessionId) async {}
-
-  @override
-  String? fileText(String path) => null;
-
-  @override
-  Map<String, Object?>? get kept => null;
-
-  @override
-  set kept(Map<String, Object?>? value) {}
-
-  @override
-  List<Map<String, Object?>> turnsTimed(String sessionId) => const [];
-
-  @override
-  void timeTurn(String sessionId, Map<String, Object?> turn) {}
-}
-
-class _NoRecords implements AgyRecords {
-  const _NoRecords();
-
-  @override
-  Future<List<Map<String, Object?>>> messages() async => const [];
-
-  @override
-  String taskLog(String taskId) => '';
 }

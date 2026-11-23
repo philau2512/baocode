@@ -411,15 +411,6 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
     }
     _loading = false;
     if (!_loaded.isCompleted) _loaded.complete();
-    // One listing anew after answering (Antigravity's, before its agy is
-    // up): asked again as it tells.
-    for (final kernel in kernels) {
-      if (kernel.catalog case ChangingCatalog(:final changes)) {
-        void listener() => unawaited(refresh());
-        changes.addListener(listener);
-        _catalogListeners.add(() => changes.removeListener(listener));
-      }
-    }
     for (final folder in {?_ideFolder, ..._windowFolders}) {
       _ensureIdeChat(folder);
     }
@@ -431,8 +422,6 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
       notifyListeners();
     }
   }
-
-  final List<void Function()> _catalogListeners = [];
 
   Future<void>? _refreshing;
 
@@ -575,7 +564,8 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
 
   /// Has [thread], a new agent nothing was sent to yet, work in [path]
   /// instead: a new agent there (an untouched one reused) takes its pane,
-  /// and it goes. [path] is opened as a project if it was not one.
+  /// and it goes. [path] is opened as a project if it was not one. What is
+  /// typed goes along: the project is often picked after it.
   AgentThread moveNew(AgentThread thread, String path) {
     final project = _openProject(path);
     if (project == thread.project || !_threads.contains(thread)) {
@@ -584,6 +574,10 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
     // Into its pane: the focused one is what [create] shows the new in.
     if (_grid.contains(thread)) _focus(thread);
     final moved = create(project: project);
+    final draft = thread.session.draft;
+    if (draft.content?.trim().isNotEmpty ?? false) {
+      moved.session.draft.save(draft.content!, draft.selection, draft.images);
+    }
     if (_isUntouched(thread)) _discard(thread);
     return moved;
   }
@@ -4292,9 +4286,6 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
   void dispose() {
     _disposed = true;
     if (resumes.resume == _resumeAfterReset) resumes.resume = null;
-    for (final remove in _catalogListeners) {
-      remove();
-    }
     icons.removeListener(notifyListeners);
     for (final MapEntry(key: path, value: listener) in _unreached.entries) {
       SshHosts.instance[RemoteLocation.hostOf(path)!].removeListener(listener);

@@ -7147,6 +7147,61 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get agyCli => 'Antigravity CLI';
+
+  @override
+  String get agyCliDescription =>
+      'Google\'s own Antigravity CLI, which BaoCode installs and keeps up to date. Its conversations are kept apart from the terminal\'s agy.';
+
+  @override
+  String agyVersion(String version) {
+    return 'Version $version';
+  }
+
+  @override
+  String get agyNotInstalled => 'Not installed';
+
+  @override
+  String agyUpdateAvailable(String version) {
+    return 'Version $version is out';
+  }
+
+  @override
+  String get agyInstall => 'Install';
+
+  @override
+  String get agyUpdate => 'Update';
+
+  @override
+  String agyInstalling(int percent) {
+    return 'Installing… $percent%';
+  }
+
+  @override
+  String get agyAccount => 'Google Account';
+
+  @override
+  String get agyAccountDescription =>
+      'Signing in opens the browser. The sign-in is the terminal\'s agy\'s too: signing out signs it out as well.';
+
+  @override
+  String get agySignIn => 'Sign In';
+
+  @override
+  String get agySignOut => 'Sign Out';
+
+  @override
+  String get agySigningIn => 'Waiting for the browser…';
+
+  @override
+  String agySignedIn(int count) {
+    return 'Signed in: $count models';
+  }
+
+  @override
+  String get agyNotSignedIn => 'Not signed in';
+
+  @override
   String get modelsTest => 'Test Connection';
 
   @override
@@ -14563,54 +14618,5 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String remoteBrowserReplace(String name) {
     return '“$name” already exists. Replace it?';
-  }
-
-  @override
-  String get composerApprovalAgyAutoDetail =>
-      'Approve edits and safe commands, ask before irreversible ones';
-
-  @override
-  String kernelSetupInstall(String kernel) {
-    return '$kernel isn\'t installed on this computer';
-  }
-
-  @override
-  String get kernelSetupInstallAction => 'Install';
-
-  @override
-  String kernelSetupInstalling(String kernel, int percent) {
-    return 'Installing $kernel… $percent%';
-  }
-
-  @override
-  String kernelSetupLogin(String kernel) {
-    return 'Sign in to $kernel to use it';
-  }
-
-  @override
-  String get kernelSetupLoginAction => 'Sign in';
-
-  @override
-  String get kernelSetupLoginOpening => 'Opening the sign-in page…';
-
-  @override
-  String get kernelSetupLoginCode =>
-      'Sign in on the page that opened, then paste the code it shows here.';
-
-  @override
-  String get kernelSetupCodeHint => 'Authorization code';
-
-  @override
-  String get kernelSetupSubmit => 'Submit';
-
-  @override
-  String get kernelSetupOpenPage => 'Open page';
-
-  @override
-  String get kernelSetupCancel => 'Cancel';
-
-  @override
-  String kernelSetupLocalOnly(String kernel) {
-    return '$kernel works only in projects on this computer';
   }
 }

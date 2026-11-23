@@ -246,7 +246,7 @@ class ToolCallRow extends StatelessWidget {
                         )
                       : KeyedSubtree(
                           key: const ValueKey('favicon'),
-                          child: webSiteFavicon(siteIcon),
+                          child: webSiteFaviconBadge(siteIcon),
                         ),
                 ),
               );
@@ -275,15 +275,19 @@ class ToolCallRow extends StatelessWidget {
               color: AppColors.textMuted,
             ),
             (ToolKind.web, _) => webSearchGlobe(),
-            (ToolKind.mcp, _) => SvgPicture.asset(
-              mcpIcon,
-              width: 13,
-              height: 13,
-              colorFilter: ColorFilter.mode(
-                AppColors.textMuted,
-                BlendMode.srcIn,
+            // Claude Code's ToolSearch loads tools' definitions, MCP tools'
+            // mostly: it wears their mark too.
+            (ToolKind.mcp || ToolKind.search, _)
+                when kind == ToolKind.mcp || tool == 'ToolSearch' =>
+              SvgPicture.asset(
+                mcpIcon,
+                width: 13,
+                height: 13,
+                colorFilter: ColorFilter.mode(
+                  AppColors.textMuted,
+                  BlendMode.srcIn,
+                ),
               ),
-            ),
             _ => switch (tool?.toLowerCase()) {
               'schedule' => Icon(
                 Icons.schedule_rounded,

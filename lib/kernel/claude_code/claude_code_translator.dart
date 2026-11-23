@@ -8,7 +8,6 @@ import '../../chat/compaction_text.dart';
 import '../../l10n/l10n.dart';
 import '../kernel_event.dart';
 import '../kernel_types.dart';
-import '../line_diff.dart';
 import '../output_meter.dart';
 import 'claude_goal.dart';
 import 'claude_numbers.dart';
@@ -1318,8 +1317,10 @@ class ClaudeTranslator {
         target: _string(input['skill']) ?? _string(input['command']) ?? '',
         status: status,
       ),
+      // Loads tools' definitions, MCP tools' mostly: drawn with their mark.
       'ToolSearch' => ToolCallItem(
         kind: ToolKind.search,
+        tool: name,
         label: tense('Looked up tools', 'Looking up tools'),
         target: _string(input['query']) ?? '',
         status: status,
@@ -1608,7 +1609,11 @@ class ClaudeTranslator {
       _toolItem(
         tool,
         outcome,
-        output: outcome == _Outcome.done ? _short(text) : _tail(text),
+        output: outcome != _Outcome.done
+            ? _tail(text)
+            : tool.name == 'WebSearch'
+            ? _searchOutput(text)
+            : _short(text),
         images: _resultImages(block['content']),
         imageFiles: _savedImages(block['content']),
       ),
@@ -1681,7 +1686,10 @@ class ClaudeTranslator {
       // A notebook edit tells the cell's source before and after, not a
       // patch (the file is JSON): its lines, compared.
       String source(String key) => _string(result[key]) ?? '';
-      for (final line in lineDiff(source('old_source'), source('new_source'))) {
+      for (final line in _lineDiff(
+        source('old_source'),
+        source('new_source'),
+      )) {
         switch (line.type) {
           case DiffLineType.added:
             added++;
@@ -1773,6 +1781,48 @@ class ClaudeTranslator {
   }
 
   static const _maxDiffLines = 400;
+
+  /// [before] to [after], line by line: kept lines as context, numbered as
+  /// in the text they are from. Past a size, all of one replaced by the
+  /// other.
+  static List<DiffLine> _lineDiff(String before, String after) {
+    List<String> split(String text) => text.isEmpty ? [] : text.split('\n');
+    final a = split(before);
+    final b = split(after);
+    // The longest common subsequence, from the end.
+    final common = a.length * b.length <= 250000
+        ? List.generate(a.length + 1, (_) => List.filled(b.length + 1, 0))
+        : null;
+    if (common != null) {
+      for (var i = a.length - 1; i >= 0; i--) {
+        for (var j = b.length - 1; j >= 0; j--) {
+          common[i][j] = a[i] == b[j]
+              ? common[i + 1][j + 1] + 1
+              : math.max(common[i + 1][j], common[i][j + 1]);
+        }
+      }
+    }
+    final lines = <DiffLine>[];
+    var i = 0;
+    var j = 0;
+    while (i < a.length || j < b.length) {
+      if (common != null && i < a.length && j < b.length && a[i] == b[j]) {
+        lines.add(DiffLine(DiffLineType.context, j + 1, b[j]));
+        i++;
+        j++;
+      } else if (i < a.length &&
+          (j == b.length ||
+              common == null ||
+              common[i + 1][j] >= common[i][j + 1])) {
+        lines.add(DiffLine(DiffLineType.removed, i + 1, a[i]));
+        i++;
+      } else {
+        lines.add(DiffLine(DiffLineType.added, j + 1, b[j]));
+        j++;
+      }
+    }
+    return lines;
+  }
 
   // --- Runtime messages ------------------------------------------------------------
 
@@ -2344,6 +2394,20 @@ class ClaudeTranslator {
   static String? _short(String text) {
     if (text.isEmpty) return null;
     return text.length > 2000 ? '${text.substring(0, 2000)}…' : text;
+  }
+
+  /// A web search's output shortened as [_short], but its `Links: [...]`
+  /// line kept whole however long: the sites' icons are read from it, and
+  /// fifteen results with redirect URLs run past 2000 characters.
+  static String? _searchOutput(String text) {
+    if (text.isEmpty) return null;
+    if (text.length <= 2000) return text;
+    final lines = text.split('\n');
+    final at = lines.indexWhere((line) => line.startsWith('Links:'));
+    if (at < 0) return _short(text);
+    final links = lines[at];
+    final rest = _short([...lines.take(at), ...lines.skip(at + 1)].join('\n'));
+    return rest == null ? links : '$rest\n$links';
   }
 
   /// The end of a long output, where errors are.

@@ -10,6 +10,7 @@ import '../kernel/kernel_registry.dart';
 import '../kernel/kernel_types.dart';
 import '../kernel/prompt_suggestions.dart';
 import '../kernel/transcript.dart';
+import '../platform/native_path.dart';
 import '../remote/remote_location.dart';
 import 'chat_feed.dart';
 import 'chat_models.dart';
@@ -397,8 +398,6 @@ class ChatSession extends ChangeNotifier implements ChatFeed {
       queuedInPlace: _queuedInPlace,
     );
     _connect(descriptor);
-    // Shown: ready as [attach] has the first, its models and all.
-    if (_views > 0) _kernel.prepare();
     notifyListeners();
   }
 
@@ -1056,6 +1055,7 @@ class ChatSession extends ChangeNotifier implements ChatFeed {
     final cwd = kernelContext.cwd;
     if (cwd == null) return path;
     final paths = RemoteLocation.pathsOf(cwd);
+    path = nativePath(path, paths);
     return paths.isAbsolute(path)
         ? path
         : paths.join(RemoteLocation.pathOf(cwd), path);
